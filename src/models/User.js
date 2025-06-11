@@ -1,30 +1,31 @@
 const mongoose = require("mongoose");
+const validator = require("validator");
 const bcrypt = require("bcryptjs");
+const { verify } = require("jsonwebtoken");
 
 const userSchema = new mongoose.Schema(
   {
     email: {
       type: String,
-      required: [true, "Email is required"],
+      required: [true, "Email is required!"],
       unique: true,
       lowercase: true,
-      trim: true,
+      validate: [validator.isEmail, "Please provide a valid email!"],
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required: [true, "Password is required!"],
+      select: false,
     },
-    firstName: {
+    passwordChangedAt: {
+    type: Date,
+    default: Date.now
+  },
+    name: {
       type: String,
-      required: [true, "First name is required"],
+      // required: [true, "Name is required"],
       trim: true,
-      maxlength: [50, "First name cannot exceed 50 characters"],
-    },
-    lastName: {
-      type: String,
-      required: [true, "Last name is required"],
-      trim: true,
-      maxlength: [50, "Last name cannot exceed 50 characters"],
+      maxlength: [50, "Name cannot exceed 50 characters"],
     },
     phoneNumber: {
       type: String,
@@ -76,17 +77,17 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: [String],
-      required: [true, "At least one role is required"],
       enum: {
         values: ["tenant", "landlord", "admin"],
         message: "Role must be tenant, landlord, or admin",
       },
       default: ["tenant"],
     },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
+    isVerified: { type: Boolean, default: false },
+    resetPasswordToken: String,
+    resetPasswordExpiresAt: Date,
+    verificationToken: String,
+    verificationTokenExpiresAt: Date,
     phoneVerified: {
       type: Boolean,
       default: false,
@@ -126,11 +127,8 @@ userSchema.virtual("fullName").get(function () {
 
 // Pre-save middleware to hash password
 userSchema.pre("save", async function (next) {
-  // Only hash the password if it has been modified (or is new)
   if (!this.isModified("password")) return next();
-
   try {
-    // Hash the password with cost of 12
     this.password = await bcrypt.hash(this.password, 12);
     next();
   } catch (error) {
