@@ -6,11 +6,10 @@ const UserRouter = require("./src/routes/userRoute");
 const handleError = require("./src/utils/errorHandler");
 require("dotenv").config({ path: "./config.env" });
 
-const app = express(); //Create server
+const app = express(); 
 
 app.use(express.json());
 
-//Cors setting
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
@@ -19,27 +18,23 @@ app.use(
   })
 );
 
-//Body Parser
 app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 
-//Test Middleware
+
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
   console.log(req.cookies);
   next();
 });
 
-//Middleware Routing
+
 app.use("/user", UserRouter);
 
-////Error Handler Middleware
 app.use(handleError);
 
-//Connect Mongo Config
 connectDB();
 
-//Listen Server
 app.listen(process.env.PORT || 8080, () =>
   console.log("Server is running at ", process.env.PORT || 8080)
 );
