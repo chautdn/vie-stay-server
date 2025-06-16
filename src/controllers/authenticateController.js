@@ -6,13 +6,14 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { promisify } = require("util");
 const User = require("../models/user");
-const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/appError");
+const catchAsync = require("../utils/catchAsync.js");
+//const cloudinary = require("../utils/cloudinary");
 const {
   PASSWORD_RESET_REQUEST_TEMPLATE,
   VERIFICATION_EMAIL_TEMPLATE,
 } = require("../templates/emailTemplates.js");
-const { json } = require("stream/consumers");
+
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Email Transporter
@@ -25,14 +26,15 @@ const transporter = nodemailer.createTransport({
 });
 
 // JWT Token Generator
-const signToken = (id) =>
-  jwt.sign({ id }, process.env.ACCESS_TOKEN_SECRET, {
+const signToken = (id, role) =>
+  jwt.sign({ id, role }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: process.env.ACCESS_TOKEN_LIFE,
   });
 
 // Send JWT Token in Response
 const createSendToken = (user, statusCode, res) => {
-  const token = signToken(user._id);
+  const token = signToken(user._id, user.role); // Thêm role vào token
+
   const cookieOptions = {
     expires: new Date(
       Date.now() + process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000
@@ -70,64 +72,74 @@ const sendOTP = async (email, verificationToken) => {
 
 // Signup
 exports.signup = catchAsync(async (req, res, next) => {
-  let { name, email, password, phoneNumber } = req.body;
-
-  if (!name || !email || !password || !phoneNumber) {
-    return next(new AppError("Name, email, password, and phone number are required", 400));
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) {
+    return next(new AppError("Name, email, and password are required", 400));
   }
 
-  email = email.toLowerCase(); // normalize email
-
-  const existingUser = await User.findOne({ email });
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    return next(new AppError("User already exists", 409));
+  }
 
   const verificationToken = Math.floor(
     100000 + Math.random() * 900000
   ).toString();
   const hashedToken = await bcrypt.hash(verificationToken, 10);
 
-  if (existingUser) {
-    if (existingUser.isVerified) {
-      return next(new AppError("User already exists", 409));
-    } else {
-      // User not verified → resend OTP
-      existingUser.name = name; // optional: update name if they typed something different
-      existingUser.password = await bcrypt.hash(password, 12); // important: hash password
-      existingUser.phoneNumber = phoneNumber; // update phone number
-      existingUser.verificationToken = hashedToken;
-      existingUser.verificationTokenExpiresAt =
-        Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-      await existingUser.save();
+  let imageUrl = {
+    public_ID: "default_avatar_public_id", // Replace with the actual public ID if available
+    url: "https://res.cloudinary.com/dvcpy4kmm/image/upload/v1738399543/default_avatar.png", // Mặc định nếu không có ảnh
+  };
+  // // Kiểm tra nếu có file avatar gửi lên
+  // if (req.files && req.files.image) {
+  //   const image = req.files.image;
+  //   try {
+  //     // Upload avatar lên Cloudinary
+  //     const uploadResult = await cloudinary.uploader.upload(
+  //       image.tempFilePath,
+  //       {
+  //         folder: "avatars", // Lưu vào thư mục avatars trên Cloudinary
+  //         width: 150,
+  //         height: 150,
+  //         crop: "fill",
+  //       }
+  //     );
 
-      await sendOTP(email, verificationToken);
+  //     imageUrl = {
+  //       public_ID: uploadResult.public_id,
+  //       url: uploadResult.secure_url,
+  //     }; // Lấy URL ảnh
+  //   } catch (err) {
+  //     return next(new AppError("Error uploading avatar", 500));
+  //   }
+  // }
 
-      return res.status(200).json({
-        status: "pending",
-        message: "Verification code resent. Please verify your email.",
-      });
-    }
-  }
-
-  // If no user exists → create new
   const newUser = await User.create({
     name,
     email,
-    password: await bcrypt.hash(password, 12), // hash password
-    phoneNumber,
+    password, // Hash the password
     isVerified: false,
+    image: imageUrl,
     verificationToken: hashedToken,
-    verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+    // cmnd: "N/A",
+    // address: "N/A",
+    // phoneNumber: "N/A",
   });
 
+  // Send OTP
   await sendOTP(email, verificationToken);
 
   res.status(201).json({
     status: "success",
+    verificationToken,
     data: {
       user: {
         id: newUser._id,
         name: newUser.name,
         email: newUser.email,
-        phoneNumber: newUser.phoneNumber,
+        image: newUser.image,
       },
     },
   });
@@ -218,18 +230,26 @@ exports.resendEmailVerification = catchAsync(async (req, res, next) => {
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
 
+  console.log(email);
+  console.log(password);
+
   if (!email || !password) {
     return next(new AppError("Please provide email and password!", 400));
   }
 
   const user = await User.findOne({ email }).select("+password");
 
-  if (!user || !(await user.correctPassword(password, user.password))) {
+  console.log(`Hashed password from DB: ${user.name}`);
+  console.log(`Hashed password from DB: ${user.password}`);
+  console.log(`Password entered: ${password}`);
+
+  if (!user || !(await bcrypt.compare(password, user.password))) {
     return next(new AppError("Incorrect email or password", 401));
   }
 
   createSendToken(user, 200, res);
 });
+
 
 // Google Login
 exports.googleLogin = catchAsync(async (req, res, next) => {
@@ -242,7 +262,7 @@ exports.googleLogin = catchAsync(async (req, res, next) => {
   // Verify the Google token
   const ticket = await client.verifyIdToken({
     idToken: credential,
-    audience: process.env.GOOGLE_CLIENT_ID,
+    audience: process.env.GG_CLIENT_ID,
   });
 
   const payload = ticket.getPayload();
@@ -251,29 +271,32 @@ exports.googleLogin = catchAsync(async (req, res, next) => {
   // Check if user exists
   let user = await User.findOne({ email });
 
-  if (!user) {
-    // Create new user if doesn't exist
-    const randomPassword = crypto.randomBytes(20).toString("hex");
-    user = await User.create({
-      email,
-      name,
-      password: randomPassword,
-      isVerified: true, // Google users are automatically verified
-      picture, // Save profile picture URL if needed
-    });
+  if (user) {
+    // User already exists, log them in
+    return createSendToken(user, 200, res);
   }
+
+  // Create new user if doesn't exist
+  const randomPassword = crypto.randomBytes(20).toString("hex");
+  user = await User.create({
+    email,
+    name,
+    password: randomPassword,
+    isVerified: true, // Google users are automatically verified
+    picture, // Save profile picture URL if needed
+  });
 
   // Create and send JWT token
   createSendToken(user, 200, res);
 });
 
 // Logout
-exports.logout = catchAsync(async (req, res) => {
+exports.logout = (req, res) => {
   res.cookie("jwt", "", { maxAge: 1 });
   res
     .status(200)
     .json({ status: "success", message: "Logged out successfully" });
-});
+};
 
 // Forgot Password with Reset Link
 exports.forgotPassword = catchAsync(async (req, res, next) => {
@@ -363,9 +386,9 @@ exports.protect = catchAsync(async (req, res, next) => {
     return next(new AppError("User does not exist.", 401));
   }
 
-  if (currentUser.changedPasswordAfter(decoded.iat)) {
-    return next(new AppError("Password changed recently! Log in again.", 401));
-  }
+  // if (currentUser.changedPasswordAfter(decoded.iat)) {
+  //   return next(new AppError("Password changed recently! Log in again.", 401));
+  // }
 
   req.user = currentUser;
   next();

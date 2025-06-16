@@ -18,9 +18,9 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
     passwordChangedAt: {
-    type: Date,
-    default: Date.now
-  },
+      type: Date,
+      default: Date.now,
+    },
     name: {
       type: String,
       // required: [true, "Name is required"],
@@ -29,8 +29,6 @@ const userSchema = new mongoose.Schema(
     },
     phoneNumber: {
       type: String,
-      required: [true, "Phone number is required"],
-      unique: true,
       match: [
         /^(\+84|0)[0-9]{9,10}$/,
         "Please provide a valid Vietnamese phone number",
@@ -45,6 +43,7 @@ const userSchema = new mongoose.Schema(
         },
         message: "Date of birth must be in the past",
       },
+      sparse: true,
     },
     profileImage: {
       type: String,
@@ -53,6 +52,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: [20, "National ID cannot exceed 20 characters"],
+      sparse: true,
     },
     nationalIdImage: {
       type: String,
@@ -114,53 +114,21 @@ const userSchema = new mongoose.Schema(
 
 // Indexes
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ phoneNumber: 1 }, { unique: true });
-userSchema.index({ role: 1 });
-userSchema.index({ isVerified: 1 });
-userSchema.index({ lastLogin: 1 });
-userSchema.index({ isActive: 1 });
+userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
 
-// Virtual for full name
-userSchema.virtual("fullName").get(function () {
-  return `${this.firstName} ${this.lastName}`;
-});
 
-// Pre-save middleware to hash password
+// Hashing mật khẩu trước khi lưu
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
-  try {
-    this.password = await bcrypt.hash(this.password, 12);
-    next();
-  } catch (error) {
-    next(error);
-  }
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
 });
 
-// Instance method to check password
 userSchema.methods.correctPassword = async function (
   candidatePassword,
   userPassword
 ) {
   return await bcrypt.compare(candidatePassword, userPassword);
-};
-
-// Instance method to check if user has specific role
-userSchema.methods.hasRole = function (role) {
-  return this.role.includes(role);
-};
-
-// Static method to find users by role
-userSchema.statics.findByRole = function (role) {
-  return this.find({ role: role, isActive: true });
-};
-
-// Static method to find verified users
-userSchema.statics.findVerified = function () {
-  return this.find({
-    isVerified: true,
-    phoneVerified: true,
-    isActive: true,
-  });
 };
 
 module.exports = mongoose.model("User", userSchema);
