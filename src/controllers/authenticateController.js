@@ -229,15 +229,19 @@ exports.resendEmailVerification = catchAsync(async (req, res, next) => {
 // Login
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
-  console.log("Login request received");
+
   console.log(email);
   console.log(password);
-  console.log("Login request received");
+
   if (!email || !password) {
     return next(new AppError("Please provide email and password!", 400));
   }
 
   const user = await User.findOne({ email }).select("+password");
+
+  console.log(`Hashed password from DB: ${user.name}`);
+  console.log(`Hashed password from DB: ${user.password}`);
+  console.log(`Password entered: ${password}`);
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return next(new AppError("Incorrect email or password", 401));
@@ -245,6 +249,7 @@ exports.login = catchAsync(async (req, res, next) => {
 
   createSendToken(user, 200, res);
 });
+
 
 // Google Login
 exports.googleLogin = catchAsync(async (req, res, next) => {
