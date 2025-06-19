@@ -1,45 +1,51 @@
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const path = require("path");
 const connectDB = require("./src/config/mongo_config");
 const UserRouter = require("./src/routes/userRoute");
+const RoomRouter = require("./src/routes/roomRoutes");
 const handleError = require("./src/utils/errorHandler");
+
 require("dotenv").config({ path: "./config.env" });
 
-const app = express(); //Create server
+const app = express();
 
-app.use(express.json());
+// Kết nối DB
+connectDB();
 
-//Cors setting
+// Middlewares
+app.use(express.json({ limit: "10kb" }));
+app.use(cookieParser());
+
+// CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL || "http://localhost:3000", // fallback nếu .env thiếu
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
   })
 );
 
-//Body Parser
-app.use(express.json({ limit: "10kb" }));
-app.use(cookieParser());
+// Middleware tĩnh để hiển thị ảnh đại diện
+app.use("/uploads", express.static(path.join(__dirname, "src/uploads")));
 
-//Test Middleware
+// Test middleware
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
-  console.log(req.cookies);
+  console.log(`[${req.method}] ${req.originalUrl}`);
   next();
 });
 
-//Middleware Routing
+// ROUTES
 app.use("/user", UserRouter);
+app.use("/room", RoomRouter);
 
-////Error Handler Middleware
+// Error Handler cuối cùng
 app.use(handleError);
 
-//Connect Mongo Config
-connectDB();
-
-//Listen Server
-app.listen(process.env.PORT || 8080, () =>
-  console.log("Server is running at ", process.env.PORT || 8080)
-);
+// Run server
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`✅ Server is running at http://localhost:${PORT}`);
+});

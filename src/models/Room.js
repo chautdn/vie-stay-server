@@ -225,7 +225,7 @@ roomSchema.index({ accommodationId: 1, roomNumber: 1 }, { unique: true });
 
 // Virtual for total beds
 roomSchema.virtual('totalBeds').get(function() {
-  const beds = this.bedConfiguration;
+  const beds = this.bedConfiguration   || {};
   return (beds.singleBeds || 0) + 
          (beds.doubleBeds || 0) + 
          (beds.queenBeds || 0) + 

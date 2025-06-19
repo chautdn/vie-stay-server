@@ -31,3 +31,4 @@ dist-ssr
 .env.development
 .env.test
 .env.production
+src\templates\emailTemplates.js
