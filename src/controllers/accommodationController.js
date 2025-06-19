@@ -26,6 +26,32 @@ exports.createAccommodation = async (req, res) => {
   }
 };
 
+exports.updateAccommodation = async (req, res) => {
+ try {
+   // Tìm và cập nhật nhà trọ dựa trên ID từ params và dữ liệu từ body
+   const updatedAccommodation = await Accommodation.findByIdAndUpdate(
+     req.params.id,
+     req.body,
+     {
+       new: true, // Trả về document sau khi đã cập nhật
+       runValidators: true // Chạy lại các trình xác thực của model
+     }
+   );
+
+   if (!updatedAccommodation) {
+     return res.status(404).json({ error: 'Không tìm thấy nhà trọ.' });
+   }
+
+   res.status(200).json({
+     status: 'success',
+     data: updatedAccommodation,
+     message: 'Cập nhật nhà trọ thành công!',
+   });
+
+ } catch (error) {
+   res.status(400).json({ error: error.message });
+ }
+};
 /**
  * @desc    Lấy danh sách nhà trọ theo owner, có lọc, tìm kiếm và phân trang
  * @route   GET /api/accommodations?ownerId=...&keyword=...&type=...&district=...&amenities=...&approvalStatus=...&isActive=...&page=...&limit=...

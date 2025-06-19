@@ -3,6 +3,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const connectDB = require("./src/config/mongo_config");
 const UserRouter = require("./src/routes/userRoute");
+const AccommodationRouter = require("./src/routes/accommodationRoute");
 const handleError = require("./src/utils/errorHandler");
 const session = require("express-session");
 require("dotenv").config();
@@ -51,7 +52,7 @@ app.use(
 );
 
 app.use("/user", UserRouter);
-
+app.use("/api/accommodations", AccommodationRouter);
 app.use(handleError);
 
 connectDB();

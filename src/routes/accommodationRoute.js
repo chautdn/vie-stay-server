@@ -3,6 +3,7 @@ const router = express.Router();
 const controller = require('../controllers/accommodationController');
 
 router.post('/', controller.createAccommodation);
+router.put('/:id', controller.updateAccommodation);
 router.get('/', controller.getAccommodations);
 router.put('/:id/status', controller.updateStatus);
 
