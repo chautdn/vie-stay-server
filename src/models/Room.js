@@ -31,9 +31,7 @@ const roomSchema = new mongoose.Schema({
       message: 'Please select a valid room type'
     }
   },
-  size: {
-    type: Number,
-  },
+  size: Number,
   capacity: {
     type: Number,
     required: [true, 'Room capacity is required'],
@@ -50,9 +48,7 @@ const roomSchema = new mongoose.Schema({
     },
     default: 'unfurnished'
   },
-  images: [{
-    type: String,
-  }],
+  images: [String],
   amenities: [{
     type: String,
     enum: {
@@ -80,10 +76,7 @@ const roomSchema = new mongoose.Schema({
     water: {
       type: {
         type: String,
-        enum: {
-          values: ['per_cubic_meter', 'fixed'],
-          message: 'Water billing type must be per_cubic_meter or fixed'
-        }
+        enum: ['per_cubic_meter', 'fixed']
       },
       rate: {
         type: Number,
@@ -93,10 +86,7 @@ const roomSchema = new mongoose.Schema({
     electricity: {
       type: {
         type: String,
-        enum: {
-          values: ['per_kwh', 'fixed'],
-          message: 'Electricity billing type must be per_kwh or fixed'
-        }
+        enum: ['per_kwh', 'fixed']
       },
       rate: {
         type: Number,
@@ -106,10 +96,7 @@ const roomSchema = new mongoose.Schema({
     internet: {
       type: {
         type: String,
-        enum: {
-          values: ['fixed'],
-          message: 'Internet billing type must be fixed'
-        },
+        enum: ['fixed'],
         default: 'fixed'
       },
       rate: {
@@ -120,10 +107,7 @@ const roomSchema = new mongoose.Schema({
     sanitation: {
       type: {
         type: String,
-        enum: {
-          values: ['fixed'],
-          message: 'Sanitation billing type must be fixed'
-        },
+        enum: ['fixed'],
         default: 'fixed'
       },
       rate: {
@@ -137,10 +121,7 @@ const roomSchema = new mongoose.Schema({
       type: String,
       required: [true, 'Fee name is required'],
       trim: true,
-      enum: {
-        values: ['parking', 'security', 'maintenance', 'cleaning', 'other'],
-        message: 'Please select a valid fee type'
-      }
+      enum: ['parking', 'security', 'maintenance', 'cleaning', 'other']
     },
     amount: {
       type: Number,
@@ -150,10 +131,7 @@ const roomSchema = new mongoose.Schema({
     type: {
       type: String,
       required: [true, 'Fee type is required'],
-      enum: {
-        values: ['monthly', 'one_time'],
-        message: 'Fee type must be monthly or one_time'
-      }
+      enum: ['monthly', 'one_time']
     },
     description: {
       type: String,
@@ -164,6 +142,10 @@ const roomSchema = new mongoose.Schema({
   isAvailable: {
     type: Boolean,
     default: true
+  },
+  isHidden: {
+    type: Boolean,
+    default: false
   },
   availableFrom: {
     type: Date,
@@ -184,9 +166,7 @@ const roomSchema = new mongoose.Schema({
     min: [0, 'Total ratings cannot be negative'],
     default: 0
   },
-  lastRatingUpdate: {
-    type: Date
-  },
+  lastRatingUpdate: Date,
   viewCount: {
     type: Number,
     min: [0, 'View count cannot be negative'],
@@ -214,18 +194,14 @@ roomSchema.index({ isAvailable: 1 });
 roomSchema.index({ availableFrom: 1 });
 roomSchema.index({ currentTenant: 1 });
 roomSchema.index({ averageRating: 1 });
-
-// Compound indexes
 roomSchema.index({ accommodationId: 1, isAvailable: 1 });
 roomSchema.index({ baseRent: 1, isAvailable: 1 });
 roomSchema.index({ type: 1, baseRent: 1 });
-
-// Unique constraint for room number within accommodation
 roomSchema.index({ accommodationId: 1, roomNumber: 1 }, { unique: true });
 
-// Virtual for total beds
+// Virtuals
 roomSchema.virtual('totalBeds').get(function() {
-  const beds = this.bedConfiguration;
+  const beds = this.bedConfiguration || {};
   return (beds.singleBeds || 0) + 
          (beds.doubleBeds || 0) + 
          (beds.queenBeds || 0) + 
@@ -233,7 +209,6 @@ roomSchema.virtual('totalBeds').get(function() {
          (beds.sofaBeds || 0);
 });
 
-// Virtual for accommodation details
 roomSchema.virtual('accommodation', {
   ref: 'Accommodation',
   localField: 'accommodationId',
@@ -241,73 +216,49 @@ roomSchema.virtual('accommodation', {
   justOne: true
 });
 
-// Virtual for ratings
 roomSchema.virtual('ratings', {
   ref: 'Rating',
   localField: '_id',
   foreignField: 'roomId'
 });
 
-// Virtual for tenancy agreements
 roomSchema.virtual('tenancyAgreements', {
   ref: 'TenancyAgreement',
   localField: '_id',
   foreignField: 'roomId'
 });
 
-// Pre-save middleware to validate availability
+// Pre-save middleware
 roomSchema.pre('save', function(next) {
-  // If room has current tenant, it should not be available
   if (this.currentTenant && this.isAvailable) {
     this.isAvailable = false;
   }
-  
-  // If room is available, clear current tenant
   if (this.isAvailable && this.currentTenant) {
     this.currentTenant = undefined;
   }
-  
   next();
 });
 
-// Instance method to calculate total monthly cost
+// Instance methods
 roomSchema.methods.calculateMonthlyCost = function() {
-  let totalCost = this.baseRent;
-  
-  // Add fixed utility costs
-  if (this.utilityRates.water && this.utilityRates.water.type === 'fixed') {
-    totalCost += this.utilityRates.water.rate;
-  }
-  if (this.utilityRates.electricity && this.utilityRates.electricity.type === 'fixed') {
-    totalCost += this.utilityRates.electricity.rate;
-  }
-  if (this.utilityRates.internet && this.utilityRates.internet.rate) {
-    totalCost += this.utilityRates.internet.rate;
-  }
-  if (this.utilityRates.sanitation && this.utilityRates.sanitation.rate) {
-    totalCost += this.utilityRates.sanitation.rate;
-  }
-  
-  // Add monthly additional fees
+  let total = this.baseRent;
+
+  if (this.utilityRates.water?.type === 'fixed') total += this.utilityRates.water.rate || 0;
+  if (this.utilityRates.electricity?.type === 'fixed') total += this.utilityRates.electricity.rate || 0;
+  if (this.utilityRates.internet?.rate) total += this.utilityRates.internet.rate;
+  if (this.utilityRates.sanitation?.rate) total += this.utilityRates.sanitation.rate;
+
   this.additionalFees.forEach(fee => {
-    if (fee.type === 'monthly') {
-      totalCost += fee.amount;
-    }
+    if (fee.type === 'monthly') total += fee.amount;
   });
-  
-  return totalCost;
+
+  return total;
 };
 
-// Instance method to update rating
 roomSchema.methods.updateRating = async function() {
   const Rating = mongoose.model('Rating');
   const stats = await Rating.aggregate([
-    {
-      $match: { 
-        roomId: this._id, 
-        isVisible: true 
-      }
-    },
+    { $match: { roomId: this._id, isVisible: true } },
     {
       $group: {
         _id: null,
@@ -316,7 +267,7 @@ roomSchema.methods.updateRating = async function() {
       }
     }
   ]);
-  
+
   if (stats.length > 0) {
     this.averageRating = Math.round(stats[0].averageRating * 10) / 10;
     this.totalRatings = stats[0].totalRatings;
@@ -324,19 +275,17 @@ roomSchema.methods.updateRating = async function() {
     this.averageRating = 0;
     this.totalRatings = 0;
   }
-  
+
   this.lastRatingUpdate = new Date();
   return this.save();
 };
 
-// Instance method to set tenant
 roomSchema.methods.setTenant = function(tenantId) {
   this.currentTenant = tenantId;
   this.isAvailable = false;
   return this.save();
 };
 
-// Instance method to remove tenant
 roomSchema.methods.removeTenant = function() {
   this.currentTenant = undefined;
   this.isAvailable = true;
@@ -344,51 +293,47 @@ roomSchema.methods.removeTenant = function() {
   return this.save();
 };
 
-// Instance method to increment view count
 roomSchema.methods.incrementViewCount = function() {
   this.viewCount += 1;
   return this.save({ validateBeforeSave: false });
 };
 
-// Static method to find available rooms
+roomSchema.methods.hideRoom = function() {
+  this.isHidden = true;
+  return this.save();
+};
+
+roomSchema.methods.unhideRoom = function() {
+  this.isHidden = false;
+  return this.save();
+};
+
+// Static methods
 roomSchema.statics.findAvailable = function(filters = {}) {
-  const query = { 
+  const query = {
     isAvailable: true,
+    isHidden: false,
     availableFrom: { $lte: new Date() }
   };
-  
+
   if (filters.minRent || filters.maxRent) {
     query.baseRent = {};
     if (filters.minRent) query.baseRent.$gte = filters.minRent;
     if (filters.maxRent) query.baseRent.$lte = filters.maxRent;
   }
-  
-  if (filters.type) {
-    query.type = filters.type;
-  }
-  
-  if (filters.capacity) {
-    query.capacity = { $gte: filters.capacity };
-  }
-  
-  if (filters.hasPrivateBathroom !== undefined) {
-    query.hasPrivateBathroom = filters.hasPrivateBathroom;
-  }
-  
-  if (filters.furnishingLevel) {
-    query.furnishingLevel = filters.furnishingLevel;
-  }
-  
-  if (filters.amenities && filters.amenities.length > 0) {
-    query.amenities = { $in: filters.amenities };
-  }
-  
+
+  if (filters.type) query.type = filters.type;
+  if (filters.capacity) query.capacity = { $gte: filters.capacity };
+  if (filters.hasPrivateBathroom !== undefined) query.hasPrivateBathroom = filters.hasPrivateBathroom;
+  if (filters.furnishingLevel) query.furnishingLevel = filters.furnishingLevel;
+  if (filters.amenities?.length > 0) query.amenities = { $in: filters.amenities };
+
   return this.find(query).populate('accommodationId');
 };
 
-// Static method to find rooms by accommodation
 roomSchema.statics.findByAccommodation = function(accommodationId) {
-  return this.find({ accommodationId }).sort({ roomNumber: 1 });
+  return this.find({ accommodationId, isHidden: false }).sort({ roomNumber: 1 });
 };
 
-module.exports = mongoose.model('Room', roomSchema);
+module.exports = mongoose.models.Room || mongoose.model('Room', roomSchema);
+

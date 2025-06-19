@@ -11,10 +11,14 @@ const router = express.Router();
 // router.use(protect);
 
 // Room CRUD operations
+router.use(protect); // Protect all routes in this router// Restrict access to certain roles
 router.get("/", roomController.getAllRoom);
 router.post("/", restrictTo("landlord", "admin"), roomController.createRoom);
 router.get("/search", roomController.searchRooms);
 router.get("/:roomId", roomController.getRoomById);
+router.patch("/:roomId/hide", roomController.hideRoom);
+router.patch("/:roomId/unhide", roomController.unhideRoom);
+
 router.patch(
   "/:roomId",
   // restrictTo("landlord", "admin"),
@@ -40,16 +44,6 @@ router.delete(
 router.get(
   "/accommodation/:accommodationId",
   roomController.getAllRoomsByAccommodateId
-);
-router.get(
-  "/:roomId/requests",
-  // restrictTo("landlord", "admin"),
-  roomController.getAllRequestsInRoom
-);
-router.get(
-  "/:roomId/tenants",
-  // restrictTo("landlord", "admin"),
-  roomController.getCurrentTenantsInRoom
 );
 
 module.exports = router;

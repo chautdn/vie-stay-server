@@ -3,6 +3,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const connectDB = require("./src/config/mongo_config");
 const UserRouter = require("./src/routes/userRoute");
+const RoomRouter = require("./src/routes/roomRoutes"); // <-- thêm dòng này
 const handleError = require("./src/utils/errorHandler");
 const session = require("express-session");
 require("dotenv").config();
@@ -41,16 +42,17 @@ app.use((req, res, next) => {
 //Session setting
 app.use(
   session({
-    secret: process.env.SECRET_KEY, // Khóa bí mật để mã hóa session
-    resave: false, // Không lưu lại session nếu không có thay đổi
-    saveUninitialized: false, // Không lưu session trống
+    secret: process.env.SECRET_KEY,
+    resave: false,
+    saveUninitialized: false,
     cookie: {
-      maxAge: 5 * 60 * 1000, // Thời gian hết hạn session (5p)
+      maxAge: 5 * 60 * 1000,
     },
   })
 );
 
 app.use("/user", UserRouter);
+app.use("/api/v1/rooms", RoomRouter); // <-- thêm dòng này để định tuyến phòng
 
 app.use(handleError);
 

@@ -6,7 +6,10 @@ const TenancyAgreement = require("../models/TenancyAgreement");
 
 const getAllRooms = async () => {
   try {
-    const rooms = await Room.find().populate({
+    const rooms = await Room.find(
+      { isAvailable: true } 
+    ).populate({
+
       path: "accommodationId",
       populate: {
         path: "ownerId",
@@ -144,6 +147,43 @@ const createRoom = async (roomData, userId) => {
     console.error("Error in createRoom:", error);
     throw new Error("Error creating room: " + error.message);
   }
+};
+
+const hideRoom = async (roomId, userId) => {
+  const room = await Room.findById(roomId).populate("accommodationId");
+  if (!room) throw new Error("Room not found");
+
+
+  console.log("Room owner ID:", room.accommodationId.ownerId.toString());
+  console.log("User ID:", userId.toString());
+  if (room.accommodationId.ownerId.toString() !== userId.toString())
+
+    
+    throw new Error("You do not have permission to hide this room");
+  if (room.isAvailable === false) {
+    throw new Error("Room is not available for hiding");
+  }
+  room.isAvailable = false;
+  await room.save();
+
+  return room
+};
+
+const unhideRoom = async (roomId, userId) => {
+  const room = await Room.findById(roomId).populate("accommodationId");
+  if (!room) throw new Error("Room not found");
+
+  if (room.accommodationId.ownerId.toString() !== userId.toString())
+
+    
+    throw new Error("You do not have permission to hide this room");
+  if (room.isAvailable === true) {
+    throw new Error("Room is not available for unhiding");
+  }
+  room.isAvailable = true;
+  await room.save();
+
+  return room
 };
 
 // Room CRUD operations
@@ -397,4 +437,7 @@ module.exports = {
   reactivateRoom,
   deleteRoom,
   searchRooms,
+  hideRoom,
+  unhideRoom,
+
 };
