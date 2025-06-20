@@ -25,32 +25,89 @@ exports.createAccommodation = async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 };
-
+exports.getAccommodationById = async (req, res) => {
+  try {
+    const accommodation = await Accommodation.findById(req.params.id);
+    if (!accommodation) {
+      return res.status(404).json({ error: 'Accommodation not found' });
+    }
+    // MODIFIED: Bọc dữ liệu trả về trong object { data: ... } cho đồng nhất
+    res.status(200).json({ data: accommodation });
+  } catch (error) {
+    res.status(500).json({ error: 'Invalid ID format or server error' });
+  }
+};
 exports.updateAccommodation = async (req, res) => {
- try {
-   // Tìm và cập nhật nhà trọ dựa trên ID từ params và dữ liệu từ body
-   const updatedAccommodation = await Accommodation.findByIdAndUpdate(
-     req.params.id,
-     req.body,
-     {
-       new: true, // Trả về document sau khi đã cập nhật
-       runValidators: true // Chạy lại các trình xác thực của model
-     }
-   );
+  try {
+    const accommodationId = req.params.id;
+    const updatePayload = req.body;
 
-   if (!updatedAccommodation) {
-     return res.status(404).json({ error: 'Không tìm thấy nhà trọ.' });
-   }
+    const totalRooms = Number(updatePayload.totalRooms);
+    const availableRooms = Number(updatePayload.availableRooms);
 
-   res.status(200).json({
-     status: 'success',
-     data: updatedAccommodation,
-     message: 'Cập nhật nhà trọ thành công!',
-   });
+    if (availableRooms > totalRooms) {
+      return res.status(400).json({
+        error: 'Validation failed: availableRooms: Số phòng trống không thể lớn hơn tổng số phòng'
+      });
+    }
 
- } catch (error) {
-   res.status(400).json({ error: error.message });
- }
+    // 1. Lấy bản ghi hiện tại từ DB để so sánh
+    const existingAccommodation = await Accommodation.findById(accommodationId);
+    if (!existingAccommodation) {
+      return res.status(404).json({ error: 'Không tìm thấy nhà trọ.' });
+    }
+
+    // 2. So sánh các trường quan trọng để quyết định có cần duyệt lại không
+    let requiresReApproval = false;
+
+    // Danh sách các trường quan trọng (dạng chuỗi đơn giản)
+    const criticalStringFields = ['name', 'type'];
+    for (const field of criticalStringFields) {
+      if (existingAccommodation[field] !== updatePayload[field]) {
+        requiresReApproval = true;
+        break;
+      }
+    }
+
+    // So sánh các trường phức tạp hơn (object, array) bằng cách chuyển thành chuỗi JSON
+    if (!requiresReApproval) {
+      if (JSON.stringify(existingAccommodation.address) !== JSON.stringify(updatePayload.address)) {
+        requiresReApproval = true;
+      }
+      else if (JSON.stringify(existingAccommodation.images) !== JSON.stringify(updatePayload.images)) {
+        requiresReApproval = true;
+      }
+      else if (JSON.stringify(existingAccommodation.documents) !== JSON.stringify(updatePayload.documents)) {
+        requiresReApproval = true;
+      }
+    }
+
+    // 3. Chuẩn bị dữ liệu cuối cùng để cập nhật
+    const finalUpdateData = { ...updatePayload };
+    let successMessage = 'Cập nhật nhà trọ thành công!';
+
+    // Chỉ chuyển về "pending" nếu trạng thái hiện tại là "approved" và có thay đổi quan trọng
+    if (requiresReApproval && existingAccommodation.approvalStatus === 'approved') {
+      finalUpdateData.approvalStatus = 'pending';
+      successMessage = 'Cập nhật thành công! Các thay đổi quan trọng cần được duyệt lại.';
+    }
+
+    // 4. Thực hiện cập nhật vào database
+    const updatedAccommodation = await Accommodation.findByIdAndUpdate(
+      accommodationId,
+      finalUpdateData,
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: updatedAccommodation,
+      message: successMessage, // Trả về thông báo động cho frontend
+    });
+
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 };
 /**
  * @desc    Lấy danh sách nhà trọ theo owner, có lọc, tìm kiếm và phân trang
