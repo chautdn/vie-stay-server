@@ -1,34 +1,35 @@
 const mongoose = require("mongoose");
-const validator = require("validator");
 const bcrypt = require("bcryptjs");
-const { verify } = require("jsonwebtoken");
 
 const userSchema = new mongoose.Schema(
   {
-    email: {
-      type: String,
-      required: [true, "Email is required!"],
-      unique: true,
-      lowercase: true,
-      validate: [validator.isEmail, "Please provide a valid email!"],
-    },
-    password: {
-      type: String,
-      required: [true, "Password is required!"],
-      select: false,
-    },
-    passwordChangedAt: {
-      type: Date,
-      default: Date.now,
-    },
     name: {
       type: String,
-      // required: [true, "Name is required"],
+      required: [true, "Name is required"],
       trim: true,
       maxlength: [50, "Name cannot exceed 50 characters"],
     },
+    email: {
+      type: String,
+      required: [true, "Email is required"],
+      // ✅ XÓA: unique: true, để tránh duplicate index
+      lowercase: true,
+      trim: true,
+      match: [
+        /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+        "Please provide a valid email",
+      ],
+    },
+    password: {
+      type: String,
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters"],
+      select: false,
+    },
     phoneNumber: {
       type: String,
+      trim: true,
+      // ✅ XÓA: unique: true, để tránh duplicate index
       match: [
         /^(\+84|0)[0-9]{9,10}$/,
         "Please provide a valid Vietnamese phone number",
@@ -38,7 +39,7 @@ const userSchema = new mongoose.Schema(
       type: Date,
       validate: {
         validator: function (value) {
-          if (!value) return true; // Optional field
+          if (!value) return true;
           return value < new Date();
         },
         message: "Date of birth must be in the past",
@@ -112,10 +113,9 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
+// ✅ SỬA: Chỉ define indexes một lần ở đây
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
-
 
 // Hashing mật khẩu trước khi lưu
 userSchema.pre("save", async function (next) {
@@ -131,4 +131,4 @@ userSchema.methods.correctPassword = async function (
   return await bcrypt.compare(candidatePassword, userPassword);
 };
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.models.User || mongoose.model("User", userSchema);

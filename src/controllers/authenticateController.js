@@ -287,10 +287,21 @@ exports.googleLogin = catchAsync(async (req, res, next) => {
 
 // Logout
 exports.logout = (req, res) => {
-  res.cookie("jwt", "", { maxAge: 1 });
-  res
-    .status(200)
-    .json({ status: "success", message: "Logged out successfully" });
+  // Clear JWT cookie
+  res.cookie("jwt", "", {
+    maxAge: 1,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", // HTTPS in production
+    sameSite: "strict",
+  });
+
+  // You could also add token to blacklist here if you implement that feature
+  // await BlacklistedToken.create({ token: req.headers.authorization?.split(' ')[1] });
+
+  res.status(200).json({
+    status: "success",
+    message: "Logged out successfully",
+  });
 };
 
 // Forgot Password with Reset Link
@@ -372,28 +383,46 @@ exports.protect = catchAsync(async (req, res, next) => {
     return next(new AppError("You are not logged in!", 401));
   }
 
-  const decoded = await promisify(jwt.verify)(
-    token,
-    process.env.ACCESS_TOKEN_SECRET
-  );
-  const currentUser = await User.findById(decoded.id);
-  if (!currentUser) {
-    return next(new AppError("User does not exist.", 401));
+  try {
+    const decoded = await promisify(jwt.verify)(
+      token,
+      process.env.ACCESS_TOKEN_SECRET
+    );
+
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser) {
+      return next(new AppError("User does not exist.", 401));
+    }
+    req.user = currentUser;
+
+    next();
+  } catch (error) {
+    return next(new AppError("Invalid token!", 401));
   }
-
-  // if (currentUser.changedPasswordAfter(decoded.iat)) {
-  //   return next(new AppError("Password changed recently! Log in again.", 401));
-  // }
-
-  req.user = currentUser;
-  next();
 });
 
 // Restrict Middleware
 exports.restrictTo = (...roles) =>
   catchAsync(async (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user) {
+      return next(new AppError("User not authenticated", 401));
+    }
+
+    if (!req.user.role) {
+      return next(new AppError("User role not found", 403));
+    }
+
+    // Normalize roles to array
+    const userRoles = Array.isArray(req.user.role)
+      ? req.user.role
+      : [req.user.role];
+
+    // Check if user has any of the required roles
+    const hasPermission = userRoles.some((role) => roles.includes(role));
+
+    if (!hasPermission) {
       return next(new AppError("Permission denied", 403));
     }
+
     next();
   });
