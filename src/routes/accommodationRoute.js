@@ -11,7 +11,10 @@ const router = express.Router();
 router.use(protect);
 router.use(restrictTo("landlord", "admin"));
 
+
 router.get("/me", accommodationController.getAccommodationByOwnerId);
+router.get("/:id", accommodationController.getAccommodationById);
+
 router.post("/", accommodationController.createAccommodation);
 router.put("/:id", accommodationController.updateAccommodation);
 router.get("/", accommodationController.getAccommodations);
