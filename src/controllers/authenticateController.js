@@ -373,31 +373,68 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
 // Protect Middleware
 exports.protect = catchAsync(async (req, res, next) => {
   let token;
-  if (req.headers.authorization?.startsWith("Bearer")) {
+
+  // Check for token in Authorization header first (for API requests)
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
     token = req.headers.authorization.split(" ")[1];
-  } else if (req.cookies.jwt) {
+  }
+  // Fallback to cookie for browser requests
+  else if (req.cookies && req.cookies.jwt) {
     token = req.cookies.jwt;
   }
 
   if (!token) {
-    return next(new AppError("You are not logged in!", 401));
+    return next(
+      new AppError(
+        "You are not logged in! Please log in to access this resource.",
+        401
+      )
+    );
   }
 
   try {
+    // Verify the token
     const decoded = await promisify(jwt.verify)(
       token,
       process.env.ACCESS_TOKEN_SECRET
     );
 
+    // Check if user still exists
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {
-      return next(new AppError("User does not exist.", 401));
+      return next(
+        new AppError("The user belonging to this token no longer exists.", 401)
+      );
     }
-    req.user = currentUser;
 
+    // Check if user is verified
+    if (!currentUser.isVerified) {
+      return next(
+        new AppError(
+          "Please verify your email before accessing this resource.",
+          401
+        )
+      );
+    }
+
+    // Grant access to protected route
+    req.user = currentUser;
     next();
   } catch (error) {
-    return next(new AppError("Invalid token!", 401));
+    if (error.name === "JsonWebTokenError") {
+      return next(new AppError("Invalid token! Please log in again.", 401));
+    } else if (error.name === "TokenExpiredError") {
+      return next(
+        new AppError("Your token has expired! Please log in again.", 401)
+      );
+    } else {
+      return next(
+        new AppError("Token verification failed! Please log in again.", 401)
+      );
+    }
   }
 });
 
@@ -412,16 +449,23 @@ exports.restrictTo = (...roles) =>
       return next(new AppError("User role not found", 403));
     }
 
-    // Normalize roles to array
+    // Normalize user roles to array
     const userRoles = Array.isArray(req.user.role)
       ? req.user.role
       : [req.user.role];
 
     // Check if user has any of the required roles
-    const hasPermission = userRoles.some((role) => roles.includes(role));
+    const hasPermission = userRoles.some((userRole) =>
+      roles.includes(userRole)
+    );
 
     if (!hasPermission) {
-      return next(new AppError("Permission denied", 403));
+      return next(
+        new AppError(
+          `Access denied. Required roles: ${roles.join(", ")}. User has: ${userRoles.join(", ")}`,
+          403
+        )
+      );
     }
 
     next();
