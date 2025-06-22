@@ -1,28 +1,28 @@
 const roomService = require("../services/roomService");
 const tenantService = require("../services/rentalRequestService");
 const catchAsync = require("../utils/catchAsync");
+const Room = require("../models/Room");
 
-const getAllRoom = catchAsync(async (req, res) => {
-  const rooms = await roomService.getAllRooms();
-  res.status(200).json({
-    status: "success",
-    results: rooms.length,
-    data: {
-      rooms,
-    },
-  });
-});
+const getAllRooms = async (req, res) => {
+  try {
+    const rooms = await Room.find();
+    res.json(rooms);
+  } catch (err) {
+    console.error("❌ Lỗi khi truy vấn Room.find():", err);
+    res.status(500).json({ error: "Lỗi server", message: err.message });
+  }
+};
 
-const getRoomById = catchAsync(async (req, res) => {
-  const { roomId } = req.params;
-  const room = await roomService.getRoomById(roomId);
-  res.status(200).json({
-    status: "success",
-    data: {
-      room,
-    },
-  });
-});
+// Lấy chi tiết phòng theo ID
+const getRoomById = async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.roomId);
+    if (!room) return res.status(404).json({ message: "Không tìm thấy phòng" });
+    res.json(room);
+  } catch (err) {
+    res.status(400).json({ error: "ID không hợp lệ" });
+  }
+};
 
 const getAllRoomsByAccommodateId = catchAsync(async (req, res) => {
   const { accommodationId } = req.params;
@@ -197,7 +197,7 @@ const getCurrentTenantsInRoom = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  getAllRoom,
+  getAllRooms,
   getRoomById,
   getAllRoomsByAccommodateId,
   getCurrentTenantsInRoom,

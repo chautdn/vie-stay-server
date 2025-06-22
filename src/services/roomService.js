@@ -204,7 +204,11 @@ const deactivateRoom = async (roomId, userId) => {
       throw new Error("Access denied: You can only modify your own properties");
     }
 
-    if (room.currentTenant) {
+    if (
+      room.currentTenant &&
+      Array.isArray(room.currentTenant) &&
+      room.currentTenant.length > 0
+    ) {
       throw new Error("Cannot deactivate room with active tenant");
     }
 
@@ -269,8 +273,12 @@ const deleteRoom = async (roomId, userId) => {
       throw new Error("Access denied: You can only modify your own properties");
     }
 
-    if (room.currentTenant) {
-      throw new Error("Cannot delete room with active tenant");
+    if (
+      room.currentTenant &&
+      Array.isArray(room.currentTenant) &&
+      room.currentTenant.length > 0
+    ) {
+      throw new Error("Cannot deactivate room with active tenant");
     }
 
     const activeRequests = await RentalRequest.find({

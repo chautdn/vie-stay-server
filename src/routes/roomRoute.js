@@ -7,8 +7,9 @@ const {
 
 const router = express.Router();
 
-router.get("/", roomController.getAllRoom);
+router.get("/", roomController.getAllRooms);
 router.get("/search", roomController.searchRooms);
+router.get("/:roomId", roomController.getRoomById);
 
 // ✅ Protected routes
 router.use(protect); // Apply auth cho tất cả routes phía dưới
@@ -17,7 +18,7 @@ router.get(
   "/accommodation/:accommodationId",
   roomController.getAllRoomsByAccommodateId
 );
-router.get("/:roomId", restrictTo("landlord"), roomController.getRoomById);
+
 router.get(
   "/:roomId/tenants",
   restrictTo("landlord"),
@@ -28,7 +29,11 @@ router.get(
   restrictTo("landlord"),
   roomController.getAllRequestsInRoom
 );
-router.post("/:accommodationId", restrictTo("landlord"), roomController.createRoom);
+router.post(
+  "/:accommodationId",
+  restrictTo("landlord"),
+  roomController.createRoom
+);
 router.put(
   "/:roomId/update",
   restrictTo("landlord"),
