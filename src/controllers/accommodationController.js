@@ -235,3 +235,41 @@ exports.getAccommodationByOwnerId = catchAsync(async (req, res) => {
     data: accommodations,
   });
 });
+
+exports.getAccommodationById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log("🔍 GET /api/accommodations/:id");
+    console.log("Accommodation ID:", id);
+    console.log("User from token:", req.user);
+
+    const accommodation = await Accommodation.findById(id);
+
+    if (!accommodation) {
+      return res.status(404).json({
+        status: "error",
+        message: "Accommodation not found",
+      });
+    }
+
+    // Check if user owns this accommodation (landlord can only access their own)
+    if (req.user.role.includes("landlord") && accommodation.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        status: "error",
+        message: "You can only access your own accommodations",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: accommodation,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching accommodation:", error);
+    res.status(500).json({
+      status: "error",
+      message: error.message || "Failed to fetch accommodation",
+    });
+  }
+};

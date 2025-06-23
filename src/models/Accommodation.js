@@ -245,16 +245,16 @@ const accommodationSchema = new mongoose.Schema(
       // coordinates: {
       //   lat: {
       //     type: Number,
-      //     required: [true, 'Latitude is required'],
-      //     min: [15.8, 'Latitude must be within Da Nang bounds'],
-      //     max: [16.2, 'Latitude must be within Da Nang bounds']
+      //     required: [true, "Latitude is required"],
+      //     min: [15.8, "Latitude must be within Da Nang bounds"],
+      //     max: [16.2, "Latitude must be within Da Nang bounds"],
       //   },
       //   lng: {
       //     type: Number,
-      //     required: [true, 'Longitude is required'],
-      //     min: [107.9, 'Longitude must be within Da Nang bounds'],
-      //     max: [108.4, 'Longitude must be within Da Nang bounds']
-      //   }
+      //     required: [true, "Longitude is required"],
+      //     min: [107.9, "Longitude must be within Da Nang bounds"],
+      //     max: [108.4, "Longitude must be within Da Nang bounds"],
+      //   },
       // },
       searchKeywords: [String],
     },
