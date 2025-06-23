@@ -195,6 +195,22 @@ const getCurrentTenantsInRoom = catchAsync(async (req, res) => {
     },
   });
 });
+const getAvailableRooms = catchAsync(async (req, res) => {
+  const filters = {
+    ...req.query,
+    isAvailable: true, 
+  };
+  
+  const rooms = await roomService.getAvailableRooms(filters);
+
+  res.status(200).json({
+    status: "success",
+    results: rooms.length,
+    data: {
+      rooms,
+    },
+  });
+});
 
 module.exports = {
   getAllRoom,
@@ -208,4 +224,5 @@ module.exports = {
   deleteRoom,
   searchRooms,
   getAllRequestsInRoom,
+  getAvailableRooms, 
 };

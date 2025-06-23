@@ -375,6 +375,197 @@ const getAllCurrentTenantsInRoom = async (roomId) => {
   }
 };
 
+// Enhanced roomService.js - getAvailableRooms function with debugging
+
+const getAvailableRooms = async (filters = {}) => {
+  try {
+    console.log("🔍 getAvailableRooms called with filters:", filters);
+    
+    // Base query - only require isAvailable: true
+    const query = {
+      isAvailable: true,
+    };
+
+    // ❌ POTENTIAL ISSUE: This line might be filtering out rooms
+    // availableFrom: { $lte: new Date() }, 
+    
+    // 🔧 BETTER: Only add availableFrom filter if the field exists and has a valid date
+    // Many rooms might not have availableFrom set properly
+    // Comment out or modify this condition:
+    
+    // Only add availableFrom filter if we want to be strict about availability date
+    // if (filters.strictAvailability !== false) {
+    //   query.availableFrom = { $lte: new Date() };
+    // }
+
+    console.log("📋 Base query:", query);
+
+    // Apply additional filters only if they exist
+    if (filters.type && filters.type !== '') {
+      query.type = filters.type;
+      console.log("🏷️ Added type filter:", filters.type);
+    }
+
+    if (filters.minRent || filters.maxRent) {
+      query.baseRent = {};
+      if (filters.minRent && filters.minRent !== '') {
+        query.baseRent.$gte = parseInt(filters.minRent);
+        console.log("💰 Added minRent filter:", filters.minRent);
+      }
+      if (filters.maxRent && filters.maxRent !== '') {
+        query.baseRent.$lte = parseInt(filters.maxRent);
+        console.log("💰 Added maxRent filter:", filters.maxRent);
+      }
+    }
+
+    if (filters.capacity && filters.capacity !== '') {
+      query.capacity = { $gte: parseInt(filters.capacity) };
+      console.log("👥 Added capacity filter:", filters.capacity);
+    }
+
+    if (filters.hasPrivateBathroom !== undefined && filters.hasPrivateBathroom !== '') {
+      query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
+      console.log("🚿 Added bathroom filter:", filters.hasPrivateBathroom);
+    }
+
+    if (filters.furnishingLevel && filters.furnishingLevel !== '') {
+      query.furnishingLevel = filters.furnishingLevel;
+      console.log("🛋️ Added furnishing filter:", filters.furnishingLevel);
+    }
+
+    if (filters.amenities && filters.amenities.length > 0) {
+      const amenitiesArray = Array.isArray(filters.amenities) 
+        ? filters.amenities 
+        : filters.amenities.split(',');
+      query.amenities = { $in: amenitiesArray };
+      console.log("✨ Added amenities filter:", amenitiesArray);
+    }
+
+    console.log("🔍 Final query:", JSON.stringify(query, null, 2));
+
+    // First, let's check total rooms without filters
+    const totalRoomsCount = await Room.countDocuments({});
+    const availableRoomsCount = await Room.countDocuments({ isAvailable: true });
+    
+    console.log("📊 Database stats:");
+    console.log("- Total rooms in DB:", totalRoomsCount);
+    console.log("- Available rooms in DB:", availableRoomsCount);
+
+    // Execute the main query
+    const rooms = await Room.find(query)
+      .populate({
+        path: "accommodationId",
+        match: { 
+          approvalStatus: "approved", 
+          isActive: true 
+        }, // Only approved and active accommodations
+        populate: {
+          path: "ownerId",
+          select: "name email",
+        },
+      })
+      .sort({ createdAt: -1 });
+
+    console.log("🏠 Rooms found after query:", rooms.length);
+
+    // ❌ POTENTIAL ISSUE: This filter removes rooms with null accommodationId
+    // But the populate match might set accommodationId to null for non-matching accommodations
+    const availableRooms = rooms.filter(room => room.accommodationId !== null);
+    
+    console.log("🏠 Rooms after accommodation filter:", availableRooms.length);
+    
+    // Let's also check what rooms were filtered out
+    const filteredOutRooms = rooms.filter(room => room.accommodationId === null);
+    if (filteredOutRooms.length > 0) {
+      console.log("⚠️ Rooms filtered out due to accommodation issues:", filteredOutRooms.length);
+      console.log("⚠️ Sample filtered room:", filteredOutRooms[0]);
+    }
+
+    // Debug: Let's see a sample room structure
+    if (availableRooms.length > 0) {
+      console.log("📋 Sample available room:", {
+        id: availableRooms[0]._id,
+        name: availableRooms[0].name,
+        isAvailable: availableRooms[0].isAvailable,
+        accommodationId: availableRooms[0].accommodationId ? 'populated' : 'null',
+        accommodationName: availableRooms[0].accommodationId?.name,
+      });
+    }
+
+    return availableRooms;
+  } catch (error) {
+    console.error("❌ Error in getAvailableRooms:", error);
+    throw new Error("Error fetching available rooms: " + error.message);
+  }
+};
+
+// Alternative version without strict accommodation filtering
+const getAvailableRoomsLenient = async (filters = {}) => {
+  try {
+    console.log("🔍 getAvailableRoomsLenient called with filters:", filters);
+    
+    const query = {
+      isAvailable: true,
+      // Remove the availableFrom restriction temporarily
+    };
+
+    // Apply filters (same as above)
+    if (filters.type) query.type = filters.type;
+    if (filters.minRent || filters.maxRent) {
+      query.baseRent = {};
+      if (filters.minRent) query.baseRent.$gte = parseInt(filters.minRent);
+      if (filters.maxRent) query.baseRent.$lte = parseInt(filters.maxRent);
+    }
+    if (filters.capacity) query.capacity = { $gte: parseInt(filters.capacity) };
+    if (filters.hasPrivateBathroom !== undefined) {
+      query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
+    }
+    if (filters.furnishingLevel) query.furnishingLevel = filters.furnishingLevel;
+
+    console.log("🔍 Lenient query:", query);
+
+    // Get all available rooms first, then populate
+    const rooms = await Room.find(query)
+      .populate({
+        path: "accommodationId",
+        // Remove the match condition to see all accommodations
+        populate: {
+          path: "ownerId",
+          select: "name email",
+        },
+      })
+      .sort({ createdAt: -1 });
+
+    console.log("🏠 Total rooms found:", rooms.length);
+
+    // Filter accommodation status in JavaScript instead of MongoDB
+    const availableRooms = rooms.filter(room => {
+      if (!room.accommodationId) {
+        console.log("⚠️ Room with no accommodation:", room._id, room.name);
+        return false;
+      }
+      
+      if (room.accommodationId.approvalStatus !== "approved") {
+        console.log("⚠️ Room with non-approved accommodation:", room._id, room.accommodationId.approvalStatus);
+        return false;
+      }
+      
+      if (!room.accommodationId.isActive) {
+        console.log("⚠️ Room with inactive accommodation:", room._id);
+        return false;
+      }
+      
+      return true;
+    });
+
+    console.log("🏠 Final available rooms:", availableRooms.length);
+
+    return availableRooms;
+  } catch (error) {
+    console.error("❌ Error in getAvailableRoomsLenient:", error);
+    throw new Error("Error fetching available rooms: " + error.message);
+  }
+};
 module.exports = {
   getAllRooms,
   getRoomById,
@@ -386,4 +577,6 @@ module.exports = {
   reactivateRoom,
   deleteRoom,
   searchRooms,
+  getAvailableRooms,
+  getAvailableRoomsLenient, 
 };
