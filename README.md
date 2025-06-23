@@ -1,1 +1,2 @@
 # vie-stay-server
+VieStay
