@@ -13,6 +13,10 @@ router.post('/resend-verification', authController.resendEmailVerification);
 router.post('/forgot-password', authController.forgotPassword);
 router.patch('/reset-password/:token', authController.resetPassword);
 
+router.patch('/:id/name', userController.updateUserName);
+router.patch('/:id/phone', userController.updateUserPhone);
+router.patch('/:id/avatar', userController.uploadUserPhoto, userController.updateUserAvatar);
+
 router
   .route('/')
   .get(userController.getAllUsers)
