@@ -7,16 +7,24 @@ const {
 
 const router = express.Router();
 
+// ✅ Public routes (không cần auth)
 router.get("/", roomController.getAllRooms);
 router.get("/search", roomController.searchRooms);
-router.get("/:roomId", roomController.getRoomById);
 
 // ✅ Protected routes
+// ✅ Routes theo roomId (đặt cuối để tránh conflict)
+router.get("/:roomId", roomController.getRoomById);
 router.use(protect); // Apply auth cho tất cả routes phía dưới
 
+// ✅ Routes theo accommodation
 router.get(
   "/accommodation/:accommodationId",
   roomController.getAllRoomsByAccommodateId
+);
+router.post(
+  "/accommodation/:accommodationId/create", // ✅ SỬA: Rõ ràng hơn
+  restrictTo("landlord"),
+  roomController.createRoom
 );
 
 router.get(
@@ -28,11 +36,6 @@ router.get(
   "/:roomId/requests",
   restrictTo("landlord"),
   roomController.getAllRequestsInRoom
-);
-router.post(
-  "/:accommodationId",
-  restrictTo("landlord"),
-  roomController.createRoom
 );
 router.put(
   "/:roomId/update",
@@ -50,4 +53,5 @@ router.patch(
   roomController.reactivateRoom
 );
 router.delete("/:roomId", restrictTo("landlord"), roomController.deleteRoom);
+
 module.exports = router;
