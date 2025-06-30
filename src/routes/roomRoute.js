@@ -10,6 +10,7 @@ const router = express.Router();
 // ✅ Public routes (không cần auth)
 router.get("/", roomController.getAllRooms);
 router.get("/search", roomController.searchRooms);
+router.get("/new-posts", roomController.getNewestRoom); // ✅ Lấy 10 bài đăng mới nhất
 
 // ✅ Protected routes
 // ✅ Routes theo roomId (đặt cuối để tránh conflict)

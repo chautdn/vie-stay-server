@@ -544,6 +544,15 @@ const getAllCurrentTenantsInRoom = async (roomId) => {
   }
 };
 
+const get10NewPosts = async () => {
+  try {
+    const rooms = await Room.find().sort({ createdAt: -1 }).limit(10);
+    return rooms;
+  } catch (error) {
+    throw new Error("Error fetching new posts: " + error.message);
+  }
+};
+
 module.exports = {
   getAllRooms,
   getRoomById,
@@ -555,4 +564,5 @@ module.exports = {
   reactivateRoom,
   deleteRoom,
   searchRooms,
+  get10NewPosts,
 };
