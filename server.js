@@ -10,6 +10,7 @@ const TenantRouter = require("./src/routes/tenantRoute");
 const rentalRequestRouter = require("./src/routes/rentalRequestRoute");
 const AccommodationRouter = require("./src/routes/accommodationRoute");
 const AgreementConfirmationRouter = require("./src/routes/agreementConfirmationRoute");
+const AdminRouter = require("./src/routes/adminRoute");
 const CotenantRouter = require("./src/routes/cotenantRouter");
 require("dotenv").config({ path: "./config.env" });
 
@@ -58,6 +59,7 @@ app.use("/agreement-confirmations", AgreementConfirmationRouter);
 // Rental requests should be the last route to avoid conflicts with other routes
 app.use("/rental-requests", rentalRequestRouter);
 app.use("/cotenant", CotenantRouter);
+app.use("/admin", AdminRouter);
 
 app.use(handleError);
 
