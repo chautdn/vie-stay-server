@@ -4,31 +4,40 @@ const { protect, restrictTo } = require("../controllers/authenticateController")
 
 const router = express.Router();
 
-// Public routes (no authentication required)
-router.get("/available", roomController.getAvailableRooms); // Get all available rooms
-router.get("/search", roomController.searchRooms); // Search rooms with filters
-router.get("/:roomId", roomController.getRoomById); // Get single room details
+// ✅ Public routes (không cần auth)
+router.get("/", roomController.getAllRooms);
+router.get("/search", roomController.searchRooms);
+router.get("/new-posts", roomController.getNewestRoom); // ✅ Lấy 10 bài đăng mới nhất
 
-// Protected routes (authentication required)
-router.use(protect);
+// ✅ Protected routes
+// ✅ Routes theo roomId (đặt cuối để tránh conflict)
+router.get("/:roomId", roomController.getRoomById);
+router.use(protect); // Apply auth cho tất cả routes phía dưới
 
-// All rooms (admin/owner access)
-router.get("/", restrictTo("admin", "landlord"), roomController.getAllRoom);
-
-// Accommodation-specific rooms (owner access)
-router.get("/accommodation/:accommodationId", 
-  restrictTo("landlord"), 
+// ✅ Routes theo accommodation
+router.get(
+  "/accommodation/:accommodationId",
   roomController.getAllRoomsByAccommodateId
 );
-
-// Room management (owner access)
-router.post("/accommodation/:accommodationId", 
-  restrictTo("landlord"), 
+router.post(
+  "/accommodation/:accommodationId/create", // ✅ SỬA: Rõ ràng hơn
+  restrictTo("landlord"),
   roomController.createRoom
 );
 
-router.put("/:roomId", 
-  restrictTo("landlord"), 
+router.get(
+  "/:roomId/tenants",
+  restrictTo("landlord"),
+  roomController.getCurrentTenantsInRoom
+);
+router.get(
+  "/:roomId/requests",
+  restrictTo("landlord"),
+  roomController.getAllRequestsInRoom
+);
+router.put(
+  "/:roomId/update",
+  restrictTo("landlord"),
   roomController.updateRoom
 );
 
@@ -41,21 +50,6 @@ router.patch("/:roomId/reactivate",
   restrictTo("landlord"), 
   roomController.reactivateRoom
 );
-
-router.delete("/:roomId", 
-  restrictTo("landlord"), 
-  roomController.deleteRoom
-);
-
-// Room-specific data
-router.get("/:roomId/requests", 
-  restrictTo("landlord"), 
-  roomController.getAllRequestsInRoom
-);
-
-router.get("/:roomId/tenants", 
-  restrictTo("landlord"), 
-  roomController.getCurrentTenantsInRoom
-);
+router.delete("/:roomId", restrictTo("landlord"), roomController.deleteRoom);
 
 module.exports = router;

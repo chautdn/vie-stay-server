@@ -150,9 +150,7 @@ exports.createDepositPayment = async (req, res) => {
       });
     }
 
-    
     if (paymentMethod === "vnpay") {
-      
       const paymentService = require("../services/paymentService");
 
       const vnpayPayment = await paymentService.createDepositPayment({
@@ -166,7 +164,6 @@ exports.createDepositPayment = async (req, res) => {
           "127.0.0.1",
       });
 
-
       return res.status(200).json({
         success: true,
         message: "VNPay payment URL created successfully",
@@ -174,7 +171,6 @@ exports.createDepositPayment = async (req, res) => {
       });
     }
 
-    
     const paymentResult = {
       paymentMethod,
       amount: confirmation.agreementTerms?.deposit || 0,
@@ -194,8 +190,12 @@ exports.createDepositPayment = async (req, res) => {
   }
 };
 
+// ✅ SỬA: handlePaymentReturn để log room update
 exports.handlePaymentReturn = async (req, res) => {
   try {
+    console.log("=== PAYMENT RETURN CONTROLLER ===");
+    console.log("Query params:", req.query);
+
     const vnp_Params = req.query;
 
     if (!vnp_Params.vnp_TxnRef) {
@@ -204,20 +204,23 @@ exports.handlePaymentReturn = async (req, res) => {
       );
     }
 
+    const paymentService = require("../services/paymentService");
     const result = await paymentService.handleVNPayReturn(vnp_Params);
 
     if (result.success) {
-     
-      res.redirect(
-        `${process.env.FRONTEND_URL}/payment/success?transactionId=${result.payment.transactionId}`
-      );
+      console.log("✅ Payment processed successfully");
+      console.log("Room update:", result.roomUpdate);
+
+      // ✅ Include room update info in redirect
+      const redirectUrl = `${process.env.FRONTEND_URL}/payment/success?transactionId=${result.payment.transactionId}&roomUpdate=${encodeURIComponent(JSON.stringify(result.roomUpdate))}`;
+
+      res.redirect(redirectUrl);
     } else {
-      res.redirect(
-        `${process.env.FRONTEND_URL}/payment/failure?transactionId=${result.payment.transactionId}&error=${result.payment.failureReason}`
-      );
+      console.log("❌ Payment processing failed");
+      res.redirect(result.redirectUrl);
     }
   } catch (error) {
-    console.error("Error handling payment return:", error);
+    console.error("❌ Error handling payment return:", error);
     res.redirect(
       `${process.env.FRONTEND_URL}/payment/error?message=Payment processing failed`
     );

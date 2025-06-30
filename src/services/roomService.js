@@ -204,7 +204,11 @@ const deactivateRoom = async (roomId, userId) => {
       throw new Error("Access denied: You can only modify your own properties");
     }
 
-    if (room.currentTenant) {
+    if (
+      room.currentTenant &&
+      Array.isArray(room.currentTenant) &&
+      room.currentTenant.length > 0
+    ) {
       throw new Error("Cannot deactivate room with active tenant");
     }
 
@@ -269,8 +273,12 @@ const deleteRoom = async (roomId, userId) => {
       throw new Error("Access denied: You can only modify your own properties");
     }
 
-    if (room.currentTenant) {
-      throw new Error("Cannot delete room with active tenant");
+    if (
+      room.currentTenant &&
+      Array.isArray(room.currentTenant) &&
+      room.currentTenant.length > 0
+    ) {
+      throw new Error("Cannot deactivate room with active tenant");
     }
 
     const activeRequests = await RentalRequest.find({
@@ -300,57 +308,218 @@ const deleteRoom = async (roomId, userId) => {
 const searchRooms = async (filters) => {
   try {
     const query = {};
+    let accommodationQuery = {};
 
-    if (filters.accommodationId) {
-      query.accommodationId = filters.accommodationId;
-    }
+    console.log("🔍 Search filters received:", filters);
 
+    // ✅ XÓA: Bỏ filter theo accommodationId
+    // if (filters.accommodationId) {
+    //   query.accommodationId = filters.accommodationId;
+    // }
+
+    // Room type filter
     if (filters.type) {
       query.type = filters.type;
     }
 
+    // Price range filter
     if (filters.minRent || filters.maxRent) {
       query.baseRent = {};
       if (filters.minRent) query.baseRent.$gte = parseInt(filters.minRent);
       if (filters.maxRent) query.baseRent.$lte = parseInt(filters.maxRent);
     }
 
+    // Size range filter
+    if (filters.minSize || filters.maxSize) {
+      query.size = {};
+      if (filters.minSize) query.size.$gte = parseInt(filters.minSize);
+      if (filters.maxSize) query.size.$lte = parseInt(filters.maxSize);
+    }
+
+    // Features/amenities filter
+    if (filters.features) {
+      const featureMapping = {
+        thang_may: "elevator",
+        wifi: "wifi",
+        may_giat: "washing_machine",
+        dieu_hoa: "air_conditioning",
+        ban_cong: "balcony",
+        noi_that_day_du: "fully_furnished",
+        cho_phep_nuoi_thu_cung: "pet_friendly",
+        cho_phep_nau_an: "cooking_allowed",
+        bao_dien_nuoc: "utilities_included",
+        bao_an_toan: "security",
+        cho_de_xe: "parking",
+        camera_an_ninh: "security_camera",
+      };
+
+      const mappedAmenity = featureMapping[filters.features];
+      if (mappedAmenity) {
+        query.amenities = { $in: [mappedAmenity] };
+      }
+    }
+
+    // Capacity filter
     if (filters.capacity) {
       query.capacity = { $gte: parseInt(filters.capacity) };
     }
 
+    // Private bathroom filter
     if (filters.hasPrivateBathroom !== undefined) {
       query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
     }
 
-    if (filters.furnishingLevel) {
-      query.furnishingLevel = filters.furnishingLevel;
-    }
+    // ✅ XÓA: Bỏ furnishingLevel filter
+    // if (filters.furnishingLevel) {
+    //   query.furnishingLevel = filters.furnishingLevel;
+    // }
 
-    if (filters.amenities && filters.amenities.length > 0) {
+    // Amenities array filter
+    if (
+      filters.amenities &&
+      Array.isArray(filters.amenities) &&
+      filters.amenities.length > 0
+    ) {
       query.amenities = { $in: filters.amenities };
     }
 
+    // Availability filter
     if (filters.isAvailable !== undefined) {
-      query.isAvailable = filters.isAvailable === "true";
+      query.isAvailable =
+        filters.isAvailable === true || filters.isAvailable === "true";
     }
 
-    const rooms = await Room.find(query)
-      .populate({
-        path: "accommodationId",
-        populate: {
-          path: "ownerId",
-          select: "name email",
-        },
-      })
-      .populate({
-        path: "currentTenant",
-        select: "name email phoneNumber",
-      })
-      .sort({ createdAt: -1 });
+    // District filter (via accommodation)
+    if (filters.district) {
+      accommodationQuery["address.district"] = filters.district;
+    }
 
+    // Province/city filter (via accommodation)
+    if (filters.province) {
+      accommodationQuery["address.city"] = filters.province;
+    }
+
+    console.log("🎯 Room query:", query);
+    console.log("🏠 Accommodation query:", accommodationQuery);
+
+    let rooms;
+
+    // ✅ SỬA: Simplified query logic
+    if (Object.keys(accommodationQuery).length > 0) {
+      // Need aggregation for location filters
+      rooms = await Room.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: "accommodations",
+            localField: "accommodationId",
+            foreignField: "_id",
+            as: "accommodation",
+          },
+        },
+        {
+          $match: {
+            "accommodation.0": { $exists: true },
+          },
+        },
+        {
+          $match: Object.keys(accommodationQuery).reduce((acc, key) => {
+            acc[`accommodation.0.${key}`] = accommodationQuery[key];
+            return acc;
+          }, {}),
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "accommodation.ownerId",
+            foreignField: "_id",
+            as: "ownerInfo",
+          },
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "currentTenant",
+            foreignField: "_id",
+            as: "currentTenantInfo",
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            roomNumber: 1,
+            name: 1,
+            description: 1,
+            type: 1,
+            size: 1,
+            capacity: 1,
+            hasPrivateBathroom: 1,
+            // ✅ XÓA: Bỏ furnishingLevel
+            images: 1,
+            amenities: 1,
+            baseRent: 1,
+            deposit: 1,
+            utilityRates: 1,
+            additionalFees: 1,
+            isAvailable: 1,
+            availableFrom: 1,
+            averageRating: 1,
+            totalRatings: 1,
+            viewCount: 1,
+            favoriteCount: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            accommodationId: {
+              _id: { $arrayElemAt: ["$accommodation._id", 0] },
+              name: { $arrayElemAt: ["$accommodation.name", 0] },
+              description: { $arrayElemAt: ["$accommodation.description", 0] },
+              address: { $arrayElemAt: ["$accommodation.address", 0] },
+              images: { $arrayElemAt: ["$accommodation.images", 0] },
+              amenities: { $arrayElemAt: ["$accommodation.amenities", 0] },
+              ownerId: {
+                _id: { $arrayElemAt: ["$ownerInfo._id", 0] },
+                name: { $arrayElemAt: ["$ownerInfo.name", 0] },
+                email: { $arrayElemAt: ["$ownerInfo.email", 0] },
+                phoneNumber: { $arrayElemAt: ["$ownerInfo.phoneNumber", 0] },
+              },
+            },
+            currentTenant: {
+              $map: {
+                input: "$currentTenantInfo",
+                as: "tenant",
+                in: {
+                  _id: "$$tenant._id",
+                  name: "$$tenant.name",
+                  email: "$$tenant.email",
+                  phoneNumber: "$$tenant.phoneNumber",
+                },
+              },
+            },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+      ]);
+    } else {
+      // Simple query without location filters
+      rooms = await Room.find(query)
+        .populate({
+          path: "accommodationId",
+          populate: {
+            path: "ownerId",
+            select: "name email phoneNumber",
+          },
+        })
+        .populate({
+          path: "currentTenant",
+          select: "name email phoneNumber",
+        })
+        .sort({ createdAt: -1 });
+    }
+
+    console.log(`✅ Found ${rooms.length} rooms matching criteria`);
     return rooms;
   } catch (error) {
+    console.error("❌ Search rooms error:", error);
     throw new Error("Error searching rooms: " + error.message);
   }
 };
@@ -375,197 +544,15 @@ const getAllCurrentTenantsInRoom = async (roomId) => {
   }
 };
 
-// Enhanced roomService.js - getAvailableRooms function with debugging
-
-const getAvailableRooms = async (filters = {}) => {
+const get10NewPosts = async () => {
   try {
-    console.log("🔍 getAvailableRooms called with filters:", filters);
-    
-    // Base query - only require isAvailable: true
-    const query = {
-      isAvailable: true,
-    };
-
-    // ❌ POTENTIAL ISSUE: This line might be filtering out rooms
-    // availableFrom: { $lte: new Date() }, 
-    
-    // 🔧 BETTER: Only add availableFrom filter if the field exists and has a valid date
-    // Many rooms might not have availableFrom set properly
-    // Comment out or modify this condition:
-    
-    // Only add availableFrom filter if we want to be strict about availability date
-    // if (filters.strictAvailability !== false) {
-    //   query.availableFrom = { $lte: new Date() };
-    // }
-
-    console.log("📋 Base query:", query);
-
-    // Apply additional filters only if they exist
-    if (filters.type && filters.type !== '') {
-      query.type = filters.type;
-      console.log("🏷️ Added type filter:", filters.type);
-    }
-
-    if (filters.minRent || filters.maxRent) {
-      query.baseRent = {};
-      if (filters.minRent && filters.minRent !== '') {
-        query.baseRent.$gte = parseInt(filters.minRent);
-        console.log("💰 Added minRent filter:", filters.minRent);
-      }
-      if (filters.maxRent && filters.maxRent !== '') {
-        query.baseRent.$lte = parseInt(filters.maxRent);
-        console.log("💰 Added maxRent filter:", filters.maxRent);
-      }
-    }
-
-    if (filters.capacity && filters.capacity !== '') {
-      query.capacity = { $gte: parseInt(filters.capacity) };
-      console.log("👥 Added capacity filter:", filters.capacity);
-    }
-
-    if (filters.hasPrivateBathroom !== undefined && filters.hasPrivateBathroom !== '') {
-      query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
-      console.log("🚿 Added bathroom filter:", filters.hasPrivateBathroom);
-    }
-
-    if (filters.furnishingLevel && filters.furnishingLevel !== '') {
-      query.furnishingLevel = filters.furnishingLevel;
-      console.log("🛋️ Added furnishing filter:", filters.furnishingLevel);
-    }
-
-    if (filters.amenities && filters.amenities.length > 0) {
-      const amenitiesArray = Array.isArray(filters.amenities) 
-        ? filters.amenities 
-        : filters.amenities.split(',');
-      query.amenities = { $in: amenitiesArray };
-      console.log("✨ Added amenities filter:", amenitiesArray);
-    }
-
-    console.log("🔍 Final query:", JSON.stringify(query, null, 2));
-
-    // First, let's check total rooms without filters
-    const totalRoomsCount = await Room.countDocuments({});
-    const availableRoomsCount = await Room.countDocuments({ isAvailable: true });
-    
-    console.log("📊 Database stats:");
-    console.log("- Total rooms in DB:", totalRoomsCount);
-    console.log("- Available rooms in DB:", availableRoomsCount);
-
-    // Execute the main query
-    const rooms = await Room.find(query)
-      .populate({
-        path: "accommodationId",
-        match: { 
-          approvalStatus: "approved", 
-          isActive: true 
-        }, // Only approved and active accommodations
-        populate: {
-          path: "ownerId",
-          select: "name email",
-        },
-      })
-      .sort({ createdAt: -1 });
-
-    console.log("🏠 Rooms found after query:", rooms.length);
-
-    // ❌ POTENTIAL ISSUE: This filter removes rooms with null accommodationId
-    // But the populate match might set accommodationId to null for non-matching accommodations
-    const availableRooms = rooms.filter(room => room.accommodationId !== null);
-    
-    console.log("🏠 Rooms after accommodation filter:", availableRooms.length);
-    
-    // Let's also check what rooms were filtered out
-    const filteredOutRooms = rooms.filter(room => room.accommodationId === null);
-    if (filteredOutRooms.length > 0) {
-      console.log("⚠️ Rooms filtered out due to accommodation issues:", filteredOutRooms.length);
-      console.log("⚠️ Sample filtered room:", filteredOutRooms[0]);
-    }
-
-    // Debug: Let's see a sample room structure
-    if (availableRooms.length > 0) {
-      console.log("📋 Sample available room:", {
-        id: availableRooms[0]._id,
-        name: availableRooms[0].name,
-        isAvailable: availableRooms[0].isAvailable,
-        accommodationId: availableRooms[0].accommodationId ? 'populated' : 'null',
-        accommodationName: availableRooms[0].accommodationId?.name,
-      });
-    }
-
-    return availableRooms;
+    const rooms = await Room.find().sort({ createdAt: -1 }).limit(10);
+    return rooms;
   } catch (error) {
-    console.error("❌ Error in getAvailableRooms:", error);
-    throw new Error("Error fetching available rooms: " + error.message);
+    throw new Error("Error fetching new posts: " + error.message);
   }
 };
 
-// Alternative version without strict accommodation filtering
-const getAvailableRoomsLenient = async (filters = {}) => {
-  try {
-    console.log("🔍 getAvailableRoomsLenient called with filters:", filters);
-    
-    const query = {
-      isAvailable: true,
-      // Remove the availableFrom restriction temporarily
-    };
-
-    // Apply filters (same as above)
-    if (filters.type) query.type = filters.type;
-    if (filters.minRent || filters.maxRent) {
-      query.baseRent = {};
-      if (filters.minRent) query.baseRent.$gte = parseInt(filters.minRent);
-      if (filters.maxRent) query.baseRent.$lte = parseInt(filters.maxRent);
-    }
-    if (filters.capacity) query.capacity = { $gte: parseInt(filters.capacity) };
-    if (filters.hasPrivateBathroom !== undefined) {
-      query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
-    }
-    if (filters.furnishingLevel) query.furnishingLevel = filters.furnishingLevel;
-
-    console.log("🔍 Lenient query:", query);
-
-    // Get all available rooms first, then populate
-    const rooms = await Room.find(query)
-      .populate({
-        path: "accommodationId",
-        // Remove the match condition to see all accommodations
-        populate: {
-          path: "ownerId",
-          select: "name email",
-        },
-      })
-      .sort({ createdAt: -1 });
-
-    console.log("🏠 Total rooms found:", rooms.length);
-
-    // Filter accommodation status in JavaScript instead of MongoDB
-    const availableRooms = rooms.filter(room => {
-      if (!room.accommodationId) {
-        console.log("⚠️ Room with no accommodation:", room._id, room.name);
-        return false;
-      }
-      
-      if (room.accommodationId.approvalStatus !== "approved") {
-        console.log("⚠️ Room with non-approved accommodation:", room._id, room.accommodationId.approvalStatus);
-        return false;
-      }
-      
-      if (!room.accommodationId.isActive) {
-        console.log("⚠️ Room with inactive accommodation:", room._id);
-        return false;
-      }
-      
-      return true;
-    });
-
-    console.log("🏠 Final available rooms:", availableRooms.length);
-
-    return availableRooms;
-  } catch (error) {
-    console.error("❌ Error in getAvailableRoomsLenient:", error);
-    throw new Error("Error fetching available rooms: " + error.message);
-  }
-};
 module.exports = {
   getAllRooms,
   getRoomById,
@@ -577,6 +564,5 @@ module.exports = {
   reactivateRoom,
   deleteRoom,
   searchRooms,
-  getAvailableRooms,
-  getAvailableRoomsLenient, 
+  get10NewPosts,
 };

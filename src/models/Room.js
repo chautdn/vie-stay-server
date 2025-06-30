@@ -208,10 +208,12 @@ const roomSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    currentTenant: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
+    currentTenant: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     averageRating: {
       type: Number,
       min: [0, "Rating cannot be negative"],

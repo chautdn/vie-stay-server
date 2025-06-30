@@ -205,7 +205,9 @@ class PaymentService {
 
   async handleVNPayReturn(vnpParams) {
     try {
+      console.log("=== HANDLING VNPAY RETURN ===");
       console.log("Received vnp_Params:", JSON.stringify(vnpParams, null, 2));
+
       const secureHash = vnpParams["vnp_SecureHash"];
       delete vnpParams["vnp_SecureHash"];
       delete vnpParams["vnp_SecureHashType"];
@@ -213,7 +215,7 @@ class PaymentService {
       vnpParams = this.sortObject(vnpParams);
       const signData = qs.stringify(vnpParams, { encode: false });
       const vnpHashSecret =
-        process.env.VNPAY_SECRET_KEY || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
+        process.env.VNPAY_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
       const hmac = crypto.createHmac("sha512", vnpHashSecret);
       const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
 
@@ -222,6 +224,7 @@ class PaymentService {
       console.log("Received secureHash:", secureHash);
 
       if (secureHash !== signed) {
+        console.log("❌ Invalid signature");
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=97`,
@@ -233,6 +236,7 @@ class PaymentService {
       const payment = await Payment.findOne({ transactionId });
 
       if (!payment) {
+        console.log("❌ Payment not found for transactionId:", transactionId);
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=transaction_not_found`,
@@ -240,20 +244,33 @@ class PaymentService {
       }
 
       if (responseCode === "00") {
+        console.log("✅ Payment successful, processing...");
+
+        // ✅ Mark payment as paid
         await payment.markAsPaid();
         payment.gatewayResponse = vnpParams;
         await payment.save();
 
-        const tenancyAgreement = await this.createTenancyAgreementAfterPayment(
+        console.log("✅ Payment marked as paid");
+
+        // ✅ Create tenancy agreement AND add tenant to room
+        const result = await this.createTenancyAgreementAfterPayment(
           payment._id
         );
+
+        console.log("✅ Tenancy agreement created and tenant added to room");
+        console.log("Room update result:", result.roomUpdate);
 
         return {
           success: true,
           payment,
-          redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success`,
+          tenancyAgreement: result.tenancyAgreement,
+          roomUpdate: result.roomUpdate, // ✅ Include room update info
+          redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?transactionId=${transactionId}`,
         };
       } else {
+        console.log("❌ Payment failed with code:", responseCode);
+
         await payment.markAsFailed(`VNPay error code: ${responseCode}`);
         payment.gatewayResponse = vnpParams;
         await payment.save();
@@ -265,7 +282,7 @@ class PaymentService {
         };
       }
     } catch (error) {
-      console.error("Error handling VNPay return:", error);
+      console.error("❌ Error handling VNPay return:", error);
       return {
         success: false,
         redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=server_error`,
@@ -273,8 +290,12 @@ class PaymentService {
     }
   }
 
+  // ✅ SỬA: Method này để thêm tenant vào room sau payment success
   async createTenancyAgreementAfterPayment(paymentId) {
     try {
+      console.log("=== CREATING TENANCY AGREEMENT AFTER PAYMENT ===");
+      console.log("Payment ID:", paymentId);
+
       const payment = await Payment.findById(paymentId);
       const confirmation = await AgreementConfirmation.findById(
         payment.agreementConfirmationId
@@ -290,6 +311,57 @@ class PaymentService {
           },
         });
 
+      if (!confirmation) {
+        throw new Error("Confirmation not found");
+      }
+
+      // ✅ THÊM: Cập nhật room - thêm tenant vào currentTenant
+      const room = await Room.findById(confirmation.roomId._id);
+
+      if (!room) {
+        throw new Error("Room not found");
+      }
+
+      console.log("Current room tenants:", room.currentTenant);
+      console.log("Adding tenant:", confirmation.tenantId._id);
+
+      // Kiểm tra xem tenant đã có trong currentTenant chưa
+      const tenantAlreadyExists = room.currentTenant.some(
+        (tenantId) =>
+          tenantId.toString() === confirmation.tenantId._id.toString()
+      );
+
+      if (!tenantAlreadyExists) {
+        // Kiểm tra capacity trước khi thêm
+        if (room.currentTenant.length >= room.capacity) {
+          throw new Error("Room is at full capacity");
+        }
+
+        // Thêm tenant vào currentTenant
+        room.currentTenant.push(confirmation.tenantId._id);
+
+        // Cập nhật availability nếu phòng đã full
+        if (room.currentTenant.length >= room.capacity) {
+          room.isAvailable = false;
+        }
+
+        room.updatedAt = new Date();
+        await room.save();
+
+        console.log(
+          `✅ Added tenant ${confirmation.tenantId._id} to room ${room._id} after payment`
+        );
+        console.log(
+          `📊 Room occupancy: ${room.currentTenant.length}/${room.capacity}`
+        );
+        console.log(`🏠 Room available: ${room.isAvailable}`);
+      } else {
+        console.log(
+          `⚠️ Tenant ${confirmation.tenantId._id} already exists in room ${room._id}`
+        );
+      }
+
+      // ✅ Tạo TenancyAgreement
       const agreementData = {
         tenantId: confirmation.tenantId._id,
         roomId: confirmation.roomId._id,
@@ -317,10 +389,20 @@ class PaymentService {
       const tenancyAgreement = new TenancyAgreement(agreementData);
       await tenancyAgreement.save();
 
+      console.log("✅ TenancyAgreement created:", tenancyAgreement._id);
+
+      // ✅ Cập nhật confirmation với payment và agreement references
       confirmation.tenancyAgreementId = tenancyAgreement._id;
       confirmation.paymentId = payment._id;
+      confirmation.paymentStatus = "completed"; // ✅ THÊM payment status
+      confirmation.paidAt = new Date(); // ✅ THÊM paid timestamp
       await confirmation.save();
 
+      console.log(
+        "✅ Confirmation updated with payment and agreement references"
+      );
+
+      // ✅ Gửi email success
       const emailService = require("./emailService");
       await emailService.sendPaymentSuccessEmail(confirmation.tenantId.email, {
         tenantName: confirmation.tenantId.name,
@@ -330,16 +412,40 @@ class PaymentService {
           confirmation.roomId.name || `Phòng ${confirmation.roomId.roomNumber}`,
         accommodationName: confirmation.roomId.accommodationId.name,
         startDate: confirmation.agreementTerms.startDate,
+        endDate: confirmation.agreementTerms.endDate,
+        monthlyRent: confirmation.agreementTerms.monthlyRent,
         landlordContact: {
           name: confirmation.roomId.accommodationId.ownerId.name,
           email: confirmation.roomId.accommodationId.ownerId.email,
-          phone: confirmation.roomId.accommodationId.ownerId.phoneNumber,
+          phone:
+            confirmation.roomId.accommodationId.ownerId.phoneNumber ||
+            confirmation.roomId.accommodationId.contactInfo?.phone,
+        },
+        roomUpdate: {
+          currentOccupancy: room.currentTenant.length,
+          capacity: room.capacity,
+          isAvailable: room.isAvailable,
+          tenantAdded: !tenantAlreadyExists,
         },
       });
 
-      return tenancyAgreement;
+      console.log("✅ Success email sent");
+
+      return {
+        tenancyAgreement,
+        roomUpdate: {
+          roomId: room._id,
+          currentOccupancy: room.currentTenant.length,
+          capacity: room.capacity,
+          isAvailable: room.isAvailable,
+          tenantAdded: !tenantAlreadyExists,
+        },
+      };
     } catch (error) {
-      console.error("Error creating tenancy agreement after payment:", error);
+      console.error(
+        "❌ Error creating tenancy agreement after payment:",
+        error
+      );
       throw error;
     }
   }

@@ -16,6 +16,12 @@ const getRentalRequestDetails = async (requestId) => {
       path: "roomId",
       select:
         "roomNumber name type baseRent size capacity hasPrivateBathroom furnishingLevel amenities images",
+      // ✅ THÊM: Populate nested accommodationId trong roomId
+      populate: {
+        path: "accommodationId",
+        select:
+          "name type address.fullAddress amenities contactInfo.phone contactInfo.email",
+      },
     })
     .populate({
       path: "accommodationId",

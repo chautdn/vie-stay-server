@@ -11,10 +11,12 @@ const router = express.Router();
 router.use(protect);
 router.use(restrictTo("landlord", "admin"));
 
-// Get accommodations by owner (for the current user)
-router.get("/me", accommodationController.getAccommodationByOwnerId);
 
-// Get all accommodations (with filtering)
+router.get("/me", accommodationController.getAccommodationByOwnerId);
+router.get("/:id", accommodationController.getAccommodationById);
+
+router.post("/", accommodationController.createAccommodation);
+router.put("/:id", accommodationController.updateAccommodation);
 router.get("/", accommodationController.getAccommodations);
 
 // Get single accommodation by ID

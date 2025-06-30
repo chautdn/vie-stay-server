@@ -76,30 +76,6 @@ const getAccommodationByOwner = async (ownerId) => {
           monthlyRevenue: {
             $multiply: ["$occupiedRooms", 3000000],
           },
-
-          // Format address
-          formattedAddress: {
-            $cond: {
-              if: { $eq: [{ $type: "$address" }, "object"] },
-              then: {
-                $ifNull: [
-                  "$address.fullAddress",
-                  {
-                    $concat: [
-                      { $ifNull: ["$address.street", ""] },
-                      ", ",
-                      { $ifNull: ["$address.ward", ""] },
-                      ", ",
-                      { $ifNull: ["$address.district", ""] },
-                      ", ",
-                      { $ifNull: ["$address.city", ""] },
-                    ],
-                  },
-                ],
-              },
-              else: { $toString: "$address" },
-            },
-          },
         },
       },
 
@@ -109,7 +85,7 @@ const getAccommodationByOwner = async (ownerId) => {
           name: 1,
           type: 1,
           description: 1,
-          address: "$formattedAddress",
+          address: 1,
           images: 1,
           amenities: 1,
           isActive: 1,
