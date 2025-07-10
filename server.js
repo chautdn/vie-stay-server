@@ -13,25 +13,53 @@ const AccommodationRouter = require("./src/routes/accommodationRoute");
 const AgreementConfirmationRouter = require("./src/routes/agreementConfirmationRoute");
 const AdminRouter = require("./src/routes/adminRoute");
 const CotenantRouter = require("./src/routes/cotenantRouter");
+const paymentRoutes = require("./src/routes/payment");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
 
-app.use(express.json());
+// IMPORTANT: Handle PayOS webhook BEFORE general JSON parsing
+// PayOS webhook needs raw body for signature verification
+app.use(
+  "/api/payment/payos-webhook",
+  express.raw({ type: "application/json" })
+);
+
+// General JSON parsing for all other routes
+app.use(express.json({ limit: "10kb" }));
 
 app.use(
   helmet.contentSecurityPolicy({
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://sandbox.vnpayment.vn"], // Cho phép inline styles và VNPay
-      imgSrc: ["'self'", "data:", "https://sandbox.vnpayment.vn"], // Cho phép hình ảnh từ VNPay
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "https://sandbox.vnpayment.vn",
+        "https://dev.payos.vn",
+      ], // Added PayOS
+      imgSrc: [
+        "'self'",
+        "data:",
+        "https://sandbox.vnpayment.vn",
+        "https://dev.payos.vn",
+      ], // Added PayOS
       scriptSrc: [
         "'self'",
         "https://code.jquery.com",
         "https://sandbox.vnpayment.vn",
-      ], // Cho phép jQuery và VNPay
-      connectSrc: ["'self'", "https://sandbox.vnpayment.vn"], // Cho phép kết nối đến VNPay
-      frameSrc: ["'self'", "https://sandbox.vnpayment.vn"], // Cho phép iframe từ VNPay
+        "https://dev.payos.vn", // Added PayOS
+      ],
+      connectSrc: [
+        "'self'",
+        "https://sandbox.vnpayment.vn",
+        "https://dev.payos.vn",
+      ], // Added PayOS
+      frameSrc: [
+        "'self'",
+        "https://sandbox.vnpayment.vn",
+        "https://dev.payos.vn",
+      ], // Added PayOS
     },
   })
 );
@@ -44,34 +72,40 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 
 // Serve static files (for uploaded images)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Create uploads directory if it doesn't exist
-const fs = require('fs');
-const uploadsDir = path.join(__dirname, 'uploads/avatars');
+const fs = require("fs");
+const uploadsDir = path.join(__dirname, "uploads/avatars");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
-  console.log(req.cookies);
+  // Only log cookies for non-webhook routes to avoid noise
+  if (!req.path.includes("webhook")) {
+    console.log("Cookies:", req.cookies);
+  }
   next();
 });
 
+// Mount routes
 app.use("/user", UserRouter);
 app.use("/rooms", RoomRouter);
 app.use("/tenants", TenantRouter);
 app.use("/api/accommodations", AccommodationRouter);
 app.use("/agreement-confirmations", AgreementConfirmationRouter);
-// Rental requests should be the last route to avoid conflicts with other routes
 app.use("/rental-requests", rentalRequestRouter);
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
+
+// Payment routes - make sure this is only mounted once
+app.use("/api/payment", paymentRoutes);
+console.log("Payment routes mounted at /api/payment");
 
 app.use(handleError);
 

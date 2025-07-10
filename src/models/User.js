@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -79,7 +80,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: [String],
       enum: {
-        values: ["tenant", "landlord", "admin", "co-tenant"],//co-tenant là người thuê chung phòng
+        values: ["tenant", "landlord", "admin", "co-tenant"], //co-tenant là người thuê chung phòng
         message: "Role must be tenant, landlord, or admin",
       },
       default: ["tenant"],
@@ -96,6 +97,20 @@ const userSchema = new mongoose.Schema(
     identityVerified: {
       type: Boolean,
       default: false,
+    },
+    wallet: {
+      balance: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      transactions: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Transaction",
+        },
+      ],
+      
     },
     lastLogin: {
       type: Date,
