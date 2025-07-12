@@ -14,6 +14,7 @@ const AgreementConfirmationRouter = require("./src/routes/agreementConfirmationR
 const AdminRouter = require("./src/routes/adminRoute");
 const CotenantRouter = require("./src/routes/cotenantRouter");
 const paymentRoutes = require("./src/routes/payment");
+const PostRouter = require("./src/routes/postRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -102,6 +103,7 @@ app.use("/agreement-confirmations", AgreementConfirmationRouter);
 app.use("/rental-requests", rentalRequestRouter);
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
+app.use("/api/posts", PostRouter);
 
 // Payment routes - make sure this is only mounted once
 app.use("/api/payment", paymentRoutes);
