@@ -236,6 +236,7 @@ exports.getAccommodationByOwnerId = catchAsync(async (req, res) => {
   });
 });
 
+// ✅ FIXED: Single, improved getAccommodationById function
 exports.getAccommodationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -244,7 +245,16 @@ exports.getAccommodationById = async (req, res) => {
     console.log("Accommodation ID:", id);
     console.log("User from token:", req.user);
 
-    const accommodation = await Accommodation.findById(id);
+    // Validate ObjectId format
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid accommodation ID format",
+      });
+    }
+
+    const accommodation = await Accommodation.findById(id)
+      .populate('ownerId', 'name email phoneNumber profileImage');
 
     if (!accommodation) {
       return res.status(404).json({
@@ -253,18 +263,24 @@ exports.getAccommodationById = async (req, res) => {
       });
     }
 
-    // Check if user owns this accommodation (landlord can only access their own)
-    if (req.user.role.includes("landlord") && accommodation.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({
-        status: "error",
-        message: "You can only access your own accommodations",
-      });
+    // ✅ IMPORTANT: Check ownership for landlords
+    if (req.user.role.includes("landlord")) {
+      if (accommodation.ownerId._id.toString() !== req.user.id) {
+        return res.status(403).json({
+          status: "error",
+          message: "You can only access your own accommodations",
+        });
+      }
     }
 
+    // ✅ FIX: Proper response format
     res.status(200).json({
       status: "success",
-      data: accommodation,
+      data: {
+        accommodation: accommodation
+      }
     });
+
   } catch (error) {
     console.error("❌ Error fetching accommodation:", error);
     res.status(500).json({
