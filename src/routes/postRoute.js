@@ -11,6 +11,7 @@ const {
   extendFeatured,
   toggleAutoRenewal,
   incrementContactCount,
+  createPostWithPlan,
 } = require("../controllers/postController");
 const { protect } = require("../controllers/authenticateController");
 
@@ -26,7 +27,8 @@ router.post("/:postId/contact", incrementContactCount); // Increment contact cou
 router.use(protect); // All routes below require authentication
 
 // User post management
-router.post("/", createPost); // Create new post
+router.post('/', createPost); // Original endpoint for backward compatibility
+router.post('/with-plan', createPostWithPlan); // New integrated endpoint
 router.get("/user/my-posts", getUserPosts); // Get current user's posts
 router.put("/:postId", updatePost); // Update post
 router.delete("/:postId", deletePost); // Delete post
