@@ -13,6 +13,7 @@ const AccommodationRouter = require("./src/routes/accommodationRoute");
 const AgreementConfirmationRouter = require("./src/routes/agreementConfirmationRoute");
 const AdminRouter = require("./src/routes/adminRoute");
 const CotenantRouter = require("./src/routes/cotenantRouter");
+const RoommateRouter = require("./src/routes/roommateRoomRoutes");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -72,6 +73,7 @@ app.use("/agreement-confirmations", AgreementConfirmationRouter);
 app.use("/rental-requests", rentalRequestRouter);
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
+app.use("/roommates", RoommateRouter);
 
 app.use(handleError);
 
