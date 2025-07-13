@@ -185,12 +185,28 @@ const postSchema = new mongoose.Schema(
       default: 7, // Default 7 days when auto-renewing
     },
 
-    // Status
+    // Status - Updated with auto-approval logic
     status: {
       type: String,
       enum: ["draft", "pending", "approved", "rejected"],
-      default: "approved",
+      default: "pending", // Default to pending, will be auto-approved for VIP posts
     },
+    
+    // Auto-approval tracking
+    isAutoApproved: {
+      type: Boolean,
+      default: false, // Track if post was auto-approved
+    },
+    approvalDate: {
+      type: Date,
+      // Set when post is approved (manual or automatic)
+    },
+    approvalType: {
+      type: String,
+      enum: ["manual", "automatic"],
+      // Track how the post was approved
+    },
+    
     isAvailable: {
       type: Boolean,
       default: true,
@@ -238,6 +254,8 @@ postSchema.index({ status: 1 });
 postSchema.index({ "address.district": 1 });
 postSchema.index({ featuredType: 1 });
 postSchema.index({ featuredEndDate: 1 });
+postSchema.index({ isAutoApproved: 1 });
+postSchema.index({ approvalDate: 1 });
 
 // Check if featured listing is active (only VIP types can be featured)
 postSchema.virtual("isFeatured").get(function() {
@@ -250,6 +268,36 @@ postSchema.virtual("isFeatured").get(function() {
 // Check if post is regular (free) type
 postSchema.virtual("isRegular").get(function() {
   return this.featuredType === "THUONG";
+});
+
+// Check if post is VIP and should be auto-approved
+postSchema.virtual("shouldAutoApprove").get(function() {
+  return this.featuredType !== "THUONG" && this.isPaid;
+});
+
+// Pre-save middleware to handle auto-approval
+postSchema.pre('save', function(next) {
+  // If this is a new document or status is being modified
+  if (this.isNew || this.isModified('status') || this.isModified('isPaid') || this.isModified('featuredType')) {
+    
+    // Auto-approve VIP posts that are paid
+    if (this.featuredType !== "THUONG" && this.isPaid && this.status === 'pending') {
+      this.status = 'approved';
+      this.isAutoApproved = true;
+      this.approvalDate = new Date();
+      this.approvalType = 'automatic';
+      
+      console.log(`Auto-approving VIP post ${this._id} (${this.featuredType})`);
+    }
+    
+    // Set approval date and type for manual approvals
+    if (this.isModified('status') && this.status === 'approved' && !this.isAutoApproved) {
+      this.approvalDate = new Date();
+      this.approvalType = 'manual';
+    }
+  }
+  
+  next();
 });
 
 // Calculate featured cost
@@ -269,7 +317,7 @@ postSchema.methods.calculateCost = function(type, days) {
   }
 };
 
-// Upgrade to featured
+// Upgrade to featured - Updated with auto-approval
 postSchema.methods.upgradeFeatured = async function(type, days) {
   const cost = this.calculateCost(type, days);
   
@@ -280,10 +328,26 @@ postSchema.methods.upgradeFeatured = async function(type, days) {
     // Regular posts never expire
     this.featuredEndDate = null;
     this.isPaid = false;
+    
+    // If upgrading to regular from VIP, post needs manual approval again
+    if (this.status === 'approved' && this.isAutoApproved) {
+      this.status = 'pending';
+      this.isAutoApproved = false;
+      this.approvalDate = null;
+      this.approvalType = null;
+    }
   } else {
-    // VIP posts expire after specified days
+    // VIP posts expire after specified days and are auto-approved
     this.featuredEndDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     this.isPaid = true;
+    
+    // Auto-approve VIP posts
+    if (this.status !== 'approved') {
+      this.status = 'approved';
+      this.isAutoApproved = true;
+      this.approvalDate = new Date();
+      this.approvalType = 'automatic';
+    }
   }
   
   return this.save();
@@ -323,7 +387,24 @@ postSchema.methods.autoRenewFeatured = async function(userWalletBalance) {
   return { success: true, cost: cost, extendedDays: this.autoRenewDuration };
 };
 
-// Get featured posts
+// Manual approval method for admin use
+postSchema.methods.manuallyApprove = async function() {
+  this.status = 'approved';
+  this.isAutoApproved = false;
+  this.approvalDate = new Date();
+  this.approvalType = 'manual';
+  return this.save();
+};
+
+// Manual rejection method
+postSchema.methods.reject = async function(reason) {
+  this.status = 'rejected';
+  this.rejectionReason = reason;
+  this.rejectionDate = new Date();
+  return this.save();
+};
+
+// Get featured posts (only approved ones)
 postSchema.statics.getFeatured = function() {
   return this.find({
     status: "approved",
@@ -334,7 +415,7 @@ postSchema.statics.getFeatured = function() {
   }).sort({ featuredType: 1, createdAt: -1 });
 };
 
-// Get all active posts (both regular and featured)
+// Get all active posts (both regular and featured, only approved)
 postSchema.statics.getAllActive = function() {
   return this.find({
     status: "approved",
@@ -345,7 +426,7 @@ postSchema.statics.getAllActive = function() {
   });
 };
 
-// Get only regular (free) posts
+// Get only regular (free) posts that are approved
 postSchema.statics.getRegular = function() {
   return this.find({
     status: "approved",
@@ -354,9 +435,34 @@ postSchema.statics.getRegular = function() {
   }).sort({ createdAt: -1 });
 };
 
+// Get posts pending manual approval (free posts only)
+postSchema.statics.getPendingApproval = function() {
+  return this.find({
+    status: "pending",
+    featuredType: "THUONG", // Only free posts need manual approval
+    isPaid: false
+  }).sort({ createdAt: -1 });
+};
+
+// Get auto-approved posts for reporting
+postSchema.statics.getAutoApproved = function(dateFrom, dateTo) {
+  const query = {
+    isAutoApproved: true,
+    approvalType: 'automatic'
+  };
+  
+  if (dateFrom || dateTo) {
+    query.approvalDate = {};
+    if (dateFrom) query.approvalDate.$gte = new Date(dateFrom);
+    if (dateTo) query.approvalDate.$lte = new Date(dateTo);
+  }
+  
+  return this.find(query).sort({ approvalDate: -1 });
+};
+
 // Update expired featured posts (reverts them back to regular posts)
 postSchema.statics.updateExpired = async function() {
-  return this.updateMany(
+  const expiredPosts = await this.updateMany(
     {
       featuredType: { $ne: "THUONG" },
       isPaid: true,
@@ -366,9 +472,17 @@ postSchema.statics.updateExpired = async function() {
       featuredType: "THUONG",
       isPaid: false,
       featuredEndDate: null,
-      featuredCost: 0
+      featuredCost: 0,
+      // Expired VIP posts need manual re-approval as regular posts
+      status: "pending",
+      isAutoApproved: false,
+      approvalDate: null,
+      approvalType: null
     }
   );
+  
+  console.log(`Updated ${expiredPosts.modifiedCount} expired featured posts to pending approval`);
+  return expiredPosts;
 };
 
 // Process auto-renewals for expiring posts
@@ -395,6 +509,41 @@ postSchema.statics.processAutoRenewals = async function() {
   }
   
   return results;
+};
+
+// Statistics methods
+postSchema.statics.getApprovalStats = async function(dateFrom, dateTo) {
+  const matchQuery = {};
+  
+  if (dateFrom || dateTo) {
+    matchQuery.approvalDate = {};
+    if (dateFrom) matchQuery.approvalDate.$gte = new Date(dateFrom);
+    if (dateTo) matchQuery.approvalDate.$lte = new Date(dateTo);
+  }
+  
+  return this.aggregate([
+    {
+      $match: {
+        status: 'approved',
+        ...matchQuery
+      }
+    },
+    {
+      $group: {
+        _id: '$approvalType',
+        count: { $sum: 1 },
+        totalRevenue: {
+          $sum: {
+            $cond: [
+              { $eq: ['$approvalType', 'automatic'] },
+              '$featuredCost',
+              0
+            ]
+          }
+        }
+      }
+    }
+  ]);
 };
 
 module.exports = mongoose.model("Post", postSchema);

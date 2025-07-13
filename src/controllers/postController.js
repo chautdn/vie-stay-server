@@ -50,6 +50,17 @@ const uploadToCloudinary = (buffer, filename) => {
   });
 };
 
+// Helper function to determine post status based on plan
+const getPostStatus = (selectedPlan, isPaid) => {
+  // VIP posts that are paid get automatic approval
+  if (selectedPlan !== 'THUONG' && isPaid) {
+    return 'approved';
+  }
+  
+  // Free posts (THUONG) require manual approval
+  return 'pending';
+};
+
 // Create a new post
 const createPost = async (req, res) => {
   try {
@@ -130,8 +141,7 @@ const createPost = async (req, res) => {
         allowNegotiation: allowNegotiation !== "false",
         preferredTenantGender: preferredTenantGender || "any",
         availableFrom: availableFrom || new Date(),
-        status: "pending",
-        // Default to regular post - plan will be set by upgrade endpoint
+        status: "pending", // Will be updated based on plan
         featuredType: "THUONG",
         isPaid: false,
       };
@@ -145,7 +155,7 @@ const createPost = async (req, res) => {
           ward: req.body.ward,
           district: req.body.district,
         },
-        status: "pending",
+        status: "pending", // Will be updated based on plan
         featuredType: "THUONG",
         isPaid: false,
       };
@@ -201,6 +211,9 @@ const createPost = async (req, res) => {
       console.log("No images to upload");
     }
 
+    // Set status for free posts (manual approval required)
+    postData.status = getPostStatus('THUONG', false);
+
     console.log("Creating post with data:", postData);
 
     const post = await Post.create(postData);
@@ -209,8 +222,11 @@ const createPost = async (req, res) => {
     console.log("Post created successfully:", post._id);
 
     res.status(201).json({
-      message: "Post created successfully",
+      message: post.status === 'approved' 
+        ? "Post created and approved automatically" 
+        : "Post created successfully and is pending approval",
       post,
+      requiresApproval: post.status === 'pending'
     });
   } catch (error) {
     console.error("Error creating post:", error);
@@ -244,8 +260,11 @@ const createPostWithPlan = async (req, res) => {
       });
     }
 
+    // Determine if this will be a paid post
+    const willBePaid = selectedPlan !== 'THUONG';
+    
     // If it's a VIP plan, check wallet balance first
-    if (selectedPlan !== 'THUONG') {
+    if (willBePaid) {
       const cost = calculateCost(selectedPlan, duration);
       const user = await User.findById(userId);
       
@@ -258,7 +277,7 @@ const createPostWithPlan = async (req, res) => {
       }
     }
 
-    // Prepare post creation data
+    // Prepare post creation data with automatic approval for VIP posts
     const createData = {
       userId,
       ...postData,
@@ -267,7 +286,7 @@ const createPostWithPlan = async (req, res) => {
         ward: postData.ward,
         district: postData.district,
       },
-      status: "pending",
+      status: getPostStatus(selectedPlan, willBePaid), // Auto-approve VIP posts
       featuredType: "THUONG", // Start as regular, will upgrade if needed
       isPaid: false,
     };
@@ -284,7 +303,7 @@ const createPostWithPlan = async (req, res) => {
     await post.populate("userId", "name profileImage");
 
     // If VIP plan selected, upgrade immediately
-    if (selectedPlan !== 'THUONG') {
+    if (willBePaid) {
       const cost = calculateCost(selectedPlan, duration);
       const user = await User.findById(userId);
 
@@ -302,7 +321,7 @@ const createPostWithPlan = async (req, res) => {
         message: `Create ${selectedPlan} post for ${duration} days`,
       });
 
-      // Upgrade post
+      // Upgrade post (this will set isPaid to true and update status to approved)
       await post.upgradeFeatured(selectedPlan, duration);
 
       // Set auto-renewal if requested
@@ -312,22 +331,24 @@ const createPostWithPlan = async (req, res) => {
         await post.save();
       }
 
-      console.log("Post created and upgraded successfully:", post._id);
+      console.log("VIP post created and auto-approved:", post._id);
 
       return res.status(201).json({
-        message: "Post created and upgraded successfully",
+        message: "VIP post created and approved automatically",
         post,
         cost,
         newBalance: user.wallet.balance,
         transactionId: transaction._id,
+        autoApproved: true,
       });
     } else {
-      console.log("Free post created successfully:", post._id);
+      console.log("Free post created, pending approval:", post._id);
 
       return res.status(201).json({
-        message: "Post created successfully",
+        message: "Free post created successfully and is pending approval",
         post,
         cost: 0,
+        requiresApproval: true,
       });
     }
   } catch (error) {
@@ -382,7 +403,7 @@ const calculateCost = (plan, days) => {
   }
 };
 
-// Get all posts (with filters)
+// Get all posts (with filters) - Updated to handle auto-approved posts
 const getPosts = async (req, res) => {
   try {
     const {
@@ -400,7 +421,7 @@ const getPosts = async (req, res) => {
     } = req.query;
 
     let query = {
-      status: "approved",
+      status: "approved", // Only show approved posts (both manual and auto-approved)
       isAvailable: true,
     };
 
@@ -466,153 +487,7 @@ const getPosts = async (req, res) => {
   }
 };
 
-// Get user's posts
-const getUserPosts = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const { status, page = 1, limit = 10 } = req.query;
-
-    let query = { userId };
-    if (status) query.status = status;
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const posts = await Post.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
-
-    const total = await Post.countDocuments(query);
-
-    res.status(200).json({
-      posts,
-      pagination: {
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / Number(limit)),
-        totalPosts: total,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Update post
-const updatePost = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const userId = req.user._id;
-    const updateData = req.body;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    // Check ownership
-    if (post.userId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to update this post" });
-    }
-
-    // Handle image uploads if provided
-    if (req.files && req.files.length > 0) {
-      try {
-        const uploadPromises = req.files.map((file, index) => {
-          const filename = `post-${userId}-${Date.now()}-${index}`;
-          return uploadToCloudinary(file.buffer, filename);
-        });
-
-        const uploadResults = await Promise.all(uploadPromises);
-        const newImageUrls = uploadResults.map((result) => result.secure_url);
-
-        updateData.images = [...(post.images || []), ...newImageUrls];
-      } catch (uploadError) {
-        return res.status(500).json({
-          message: "Error uploading images",
-          error: uploadError.message,
-        });
-      }
-    }
-
-    // Parse amenities if provided
-    if (updateData.amenities) {
-      try {
-        updateData.amenities =
-          typeof updateData.amenities === "string"
-            ? JSON.parse(updateData.amenities)
-            : updateData.amenities;
-      } catch (e) {
-        updateData.amenities = Array.isArray(updateData.amenities)
-          ? updateData.amenities
-          : [updateData.amenities];
-      }
-    }
-
-    // Update address if provided
-    if (updateData.street || updateData.ward || updateData.district) {
-      updateData.address = {
-        ...post.address,
-        ...(updateData.street && { street: updateData.street }),
-        ...(updateData.ward && { ward: updateData.ward }),
-        ...(updateData.district && { district: updateData.district }),
-      };
-      delete updateData.street;
-      delete updateData.ward;
-      delete updateData.district;
-    }
-
-    const updatedPost = await Post.findByIdAndUpdate(postId, updateData, {
-      new: true,
-      runValidators: true,
-    }).populate("userId", "name profileImage");
-
-    res.status(200).json({
-      message: "Post updated successfully",
-      post: updatedPost,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Delete post
-const deletePost = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const userId = req.user._id;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    // Check ownership
-    if (post.userId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to delete this post" });
-    }
-
-    await Post.findByIdAndDelete(postId);
-
-    res.status(200).json({ message: "Post deleted successfully" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Upgrade post to featured
+// Upgrade post to featured - Updated with auto-approval
 const upgradeToFeatured = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -663,7 +538,10 @@ const upgradeToFeatured = async (req, res) => {
       message: `Upgrade post to ${featuredType} for ${duration} days`,
     });
 
-    // Upgrade post
+    // Store previous status for message
+    const wasApproved = post.status === 'approved';
+
+    // Upgrade post (this will auto-approve if it was pending)
     await post.upgradeFeatured(featuredType, duration);
 
     // Set auto-renewal if requested
@@ -673,12 +551,17 @@ const upgradeToFeatured = async (req, res) => {
       await post.save();
     }
 
+    const message = wasApproved 
+      ? "Post upgraded to featured successfully"
+      : "Post upgraded to featured and approved automatically";
+
     res.status(200).json({
-      message: "Post upgraded to featured successfully",
+      message,
       cost,
       newBalance: user.wallet.balance,
       featuredUntil: post.featuredEndDate,
       transactionId: transaction._id,
+      autoApproved: !wasApproved,
     });
   } catch (error) {
     res.status(500).json({
@@ -688,193 +571,317 @@ const upgradeToFeatured = async (req, res) => {
   }
 };
 
-// Extend featured post
-const extendFeatured = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { additionalDays } = req.body;
-    const userId = req.user._id;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    // Check ownership
-    if (post.userId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to extend this post" });
-    }
-
-    if (post.featuredType === "THUONG") {
-      return res.status(400).json({ message: "Cannot extend regular posts" });
-    }
-
-    // Calculate cost
-    const cost = calculateCost(post.featuredType, additionalDays);
-
-    // Get user's wallet balance
-    const user = await User.findById(userId);
-    if (user.wallet.balance < cost) {
-      return res.status(400).json({
-        message: "Insufficient wallet balance",
-        required: cost,
-        available: user.wallet.balance,
-      });
-    }
-
-    // Deduct from wallet
-    user.wallet.balance -= cost;
-    await user.save();
-
-    // Create transaction record
-    const transaction = await Transaction.create({
-      user: userId,
-      type: "payment",
-      amount: cost,
-      status: "success",
-      provider: "wallet",
-      message: `Extend ${post.featuredType} featured post for ${additionalDays} days`,
-    });
-
-    // Extend post
-    await post.extendFeatured(additionalDays);
-
-    res.status(200).json({
-      message: "Post extended successfully",
-      cost,
-      newBalance: user.wallet.balance,
-      featuredUntil: post.featuredEndDate,
-      transactionId: transaction._id,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Toggle auto-renewal
-const toggleAutoRenewal = async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { autoRenew, autoRenewDuration = 7 } = req.body;
-    const userId = req.user._id;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    // Check ownership
-    if (post.userId.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to modify this post" });
-    }
-
-    post.autoRenew = autoRenew;
-    if (autoRenew) {
-      post.autoRenewDuration = autoRenewDuration;
-    }
-    await post.save();
-
-    res.status(200).json({
-      message: `Auto-renewal ${autoRenew ? "enabled" : "disabled"}`,
-      autoRenew: post.autoRenew,
-      autoRenewDuration: post.autoRenewDuration,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Increment contact count
-const incrementContactCount = async (req, res) => {
-  try {
-    const { postId } = req.params;
-
-    const post = await Post.findByIdAndUpdate(
-      postId,
-      { $inc: { contactCount: 1 } },
-      { new: true }
-    );
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    res.status(200).json({ message: "Contact count incremented" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Get featured posts
-const getFeaturedPosts = async (req, res) => {
-  try {
-    const { limit = 20 } = req.query;
-
-    const posts = await Post.getFeatured()
-      .populate("userId", "name profileImage")
-      .limit(Number(limit));
-
-    res.status(200).json({ posts });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
-// Get post by ID
-const getPostById = async (req, res) => {
-  try {
-    const { postId } = req.params;
-
-    const post = await Post.findById(postId)
-      .populate("userId", "name profileImage phoneNumber email")
-      .populate("roomId", "name roomNumber capacity")
-      .populate("accommodationId", "name type address");
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    // Increment view count
-    post.viewCount += 1;
-    await post.save();
-
-    res.status(200).json({ post });
-  } catch (error) {
-    res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
+// Rest of the controller methods remain the same...
+// [Include all other existing methods: getUserPosts, updatePost, deletePost, etc.]
 
 module.exports = {
   createPost: [upload.array("images", 10), createPost],
   createPostWithPlan, // New endpoint for integrated flow
   getPosts,
-  getFeaturedPosts,
-  getPostById,
-  getUserPosts,
-  updatePost: [upload.array("images", 10), updatePost],
-  deletePost,
-  upgradeToFeatured,
-  extendFeatured,
-  toggleAutoRenewal,
-  incrementContactCount,
-};
+  getUserPosts: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { status, page = 1, limit = 10 } = req.query;
 
+      let query = { userId };
+      if (status) query.status = status;
+
+      const skip = (Number(page) - 1) * Number(limit);
+
+      const posts = await Post.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit));
+
+      const total = await Post.countDocuments(query);
+
+      res.status(200).json({
+        posts,
+        pagination: {
+          currentPage: Number(page),
+          totalPages: Math.ceil(total / Number(limit)),
+          totalPosts: total,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  updatePost: [upload.array("images", 10), async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const userId = req.user._id;
+      const updateData = req.body;
+
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Check ownership
+      if (post.userId.toString() !== userId.toString()) {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to update this post" });
+      }
+
+      // Handle image uploads if provided
+      if (req.files && req.files.length > 0) {
+        try {
+          const uploadPromises = req.files.map((file, index) => {
+            const filename = `post-${userId}-${Date.now()}-${index}`;
+            return uploadToCloudinary(file.buffer, filename);
+          });
+
+          const uploadResults = await Promise.all(uploadPromises);
+          const newImageUrls = uploadResults.map((result) => result.secure_url);
+
+          updateData.images = [...(post.images || []), ...newImageUrls];
+        } catch (uploadError) {
+          return res.status(500).json({
+            message: "Error uploading images",
+            error: uploadError.message,
+          });
+        }
+      }
+
+      // Parse amenities if provided
+      if (updateData.amenities) {
+        try {
+          updateData.amenities =
+            typeof updateData.amenities === "string"
+              ? JSON.parse(updateData.amenities)
+              : updateData.amenities;
+        } catch (e) {
+          updateData.amenities = Array.isArray(updateData.amenities)
+            ? updateData.amenities
+            : [updateData.amenities];
+        }
+      }
+
+      // Update address if provided
+      if (updateData.street || updateData.ward || updateData.district) {
+        updateData.address = {
+          ...post.address,
+          ...(updateData.street && { street: updateData.street }),
+          ...(updateData.ward && { ward: updateData.ward }),
+          ...(updateData.district && { district: updateData.district }),
+        };
+        delete updateData.street;
+        delete updateData.ward;
+        delete updateData.district;
+      }
+
+      const updatedPost = await Post.findByIdAndUpdate(postId, updateData, {
+        new: true,
+        runValidators: true,
+      }).populate("userId", "name profileImage");
+
+      res.status(200).json({
+        message: "Post updated successfully",
+        post: updatedPost,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  }],
+  deletePost: async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const userId = req.user._id;
+
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Check ownership
+      if (post.userId.toString() !== userId.toString()) {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to delete this post" });
+      }
+
+      await Post.findByIdAndDelete(postId);
+
+      res.status(200).json({ message: "Post deleted successfully" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  upgradeToFeatured,
+  extendFeatured: async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const { additionalDays } = req.body;
+      const userId = req.user._id;
+
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Check ownership
+      if (post.userId.toString() !== userId.toString()) {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to extend this post" });
+      }
+
+      if (post.featuredType === "THUONG") {
+        return res.status(400).json({ message: "Cannot extend regular posts" });
+      }
+
+      // Calculate cost
+      const cost = calculateCost(post.featuredType, additionalDays);
+
+      // Get user's wallet balance
+      const user = await User.findById(userId);
+      if (user.wallet.balance < cost) {
+        return res.status(400).json({
+          message: "Insufficient wallet balance",
+          required: cost,
+          available: user.wallet.balance,
+        });
+      }
+
+      // Deduct from wallet
+      user.wallet.balance -= cost;
+      await user.save();
+
+      // Create transaction record
+      const transaction = await Transaction.create({
+        user: userId,
+        type: "payment",
+        amount: cost,
+        status: "success",
+        provider: "wallet",
+        message: `Extend ${post.featuredType} featured post for ${additionalDays} days`,
+      });
+
+      // Extend post
+      await post.extendFeatured(additionalDays);
+
+      res.status(200).json({
+        message: "Post extended successfully",
+        cost,
+        newBalance: user.wallet.balance,
+        featuredUntil: post.featuredEndDate,
+        transactionId: transaction._id,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  toggleAutoRenewal: async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const { autoRenew, autoRenewDuration = 7 } = req.body;
+      const userId = req.user._id;
+
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Check ownership
+      if (post.userId.toString() !== userId.toString()) {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to modify this post" });
+      }
+
+      post.autoRenew = autoRenew;
+      if (autoRenew) {
+        post.autoRenewDuration = autoRenewDuration;
+      }
+      await post.save();
+
+      res.status(200).json({
+        message: `Auto-renewal ${autoRenew ? "enabled" : "disabled"}`,
+        autoRenew: post.autoRenew,
+        autoRenewDuration: post.autoRenewDuration,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  incrementContactCount: async (req, res) => {
+    try {
+      const { postId } = req.params;
+
+      const post = await Post.findByIdAndUpdate(
+        postId,
+        { $inc: { contactCount: 1 } },
+        { new: true }
+      );
+
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      res.status(200).json({ message: "Contact count incremented" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  getFeaturedPosts: async (req, res) => {
+    try {
+      const { limit = 20 } = req.query;
+
+      const posts = await Post.getFeatured()
+        .populate("userId", "name profileImage")
+        .limit(Number(limit));
+
+      res.status(200).json({ posts });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+  getPostById: async (req, res) => {
+    try {
+      const { postId } = req.params;
+
+      const post = await Post.findById(postId)
+        .populate("userId", "name profileImage phoneNumber email")
+        .populate("roomId", "name roomNumber capacity")
+        .populate("accommodationId", "name type address");
+
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Increment view count
+      post.viewCount += 1;
+      await post.save();
+
+      res.status(200).json({ post });
+    } catch (error) {
+      res.status(500).json({
+        message: "Server error",
+        error: error.message,
+      });
+    }
+  },
+};
