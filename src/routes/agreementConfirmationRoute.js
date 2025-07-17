@@ -6,85 +6,108 @@ const {
   restrictTo,
 } = require("../controllers/authenticateController");
 
-// Public routes
+// ================================
+// PUBLIC ROUTES (không cần login) - PHẢI ĐẶT TRƯỚC protect middleware
+// ================================
+
+// ✅ VNPay payment return (webhook) - PUBLIC ROUTE
+router.get(
+  "/payment/vnpay/return", // ✅ Đảm bảo path này đúng
+  agreementConfirmationController.handlePaymentReturn
+);
+
+// ✅ Xem chi tiết confirmation qua token (tenant click từ email)
 router.get(
   "/confirm/:token",
   agreementConfirmationController.getConfirmationByToken
 );
-router.get(
-  "/payment/return",
-  agreementConfirmationController.handlePaymentReturn
-);
 
-// Protected routes
+// ✅ Apply protection từ đây trở xuống
 router.use(protect);
 
-// Tenant routes
+// ================================
+// TENANT CONFIRMATION ACTIONS
+// ================================
+
+// ✅ Xác nhận đồng ý hợp đồng (tenant)
 router.post(
   "/confirm/:token",
   restrictTo("tenant"),
   agreementConfirmationController.confirmAgreement
 );
+
+// ✅ Từ chối hợp đồng (tenant)
 router.post(
   "/reject/:token",
   restrictTo("tenant"),
   agreementConfirmationController.rejectAgreement
 );
+
+// ================================
+// TENANT PAYMENT ROUTES
+// ================================
+
+// ✅ SỬA: Tạo thanh toán tiền cọc (tenant) - đổi URL
+router.post(
+  "/payment/:confirmationId",
+  restrictTo("tenant"),
+  agreementConfirmationController.createDepositPayment
+);
+
+// ✅ Kiểm tra trạng thái thanh toán
+router.get(
+  "/payment/:transactionId/status",
+  restrictTo("tenant"),
+  agreementConfirmationController.checkPaymentStatus
+);
+
+// ================================
+// TENANT VIEW ROUTES
+// ================================
+
+// ✅ Xem tất cả confirmations của tenant
 router.get(
   "/my-confirmations",
   restrictTo("tenant"),
   agreementConfirmationController.getTenantConfirmations
 );
+
+// ✅ Xem lịch sử thanh toán của tenant
+router.get(
+  "/my-payments",
+  restrictTo("tenant"),
+  agreementConfirmationController.getTenantPayments
+);
+
+// ✅ Chi tiết 1 confirmation cụ thể
+router.get(
+  "/:confirmationId",
+  restrictTo("tenant", "landlord"),
+  agreementConfirmationController.getConfirmationById
+);
+
+// ================================
+// TENANT UTILITIES
+// ================================
+
+// ✅ Gửi lại email xác nhận
 router.post(
   "/resend/:confirmationId",
   restrictTo("tenant"),
   agreementConfirmationController.resendConfirmationEmail
 );
 
-// Payment routes - tenant only
-router.post(
-  "/payment/:confirmationId",
-  protect,
-  restrictTo("tenant"),
-  agreementConfirmationController.createDepositPayment
-);
-router.get(
-  "/payments/my-payments",
-  restrictTo("tenant"),
-  agreementConfirmationController.getTenantPayments
-);
-router.get(
-  "/payment/:paymentId",
-  agreementConfirmationController.getPaymentDetails
-);
-router.get(
-  "/payment/status/:transactionId",
-  restrictTo("tenant"),
-  agreementConfirmationController.checkPaymentStatus
-);
-router.post(
-  "/payment/cancel/:paymentId",
-  restrictTo("tenant"),
-  agreementConfirmationController.cancelPayment
-);
+// ================================
+// ADMIN ROUTES
+// ================================
 
-// Admin routes
+// ✅ Thống kê confirmations (admin)
 router.get(
-  "/stats",
+  "/admin/stats",
   restrictTo("admin"),
   agreementConfirmationController.getConfirmationStats
 );
-router.post(
-  "/expire-old",
-  restrictTo("admin"),
-  agreementConfirmationController.expireOldConfirmations
-);
 
-// Thêm route:
-router.get(
-  "/:confirmationId",
-  protect,
-  agreementConfirmationController.getConfirmationById
-);
+// ✅ Làm hết hạn confirmations cũ (admin/cron job)
 
 module.exports = router;

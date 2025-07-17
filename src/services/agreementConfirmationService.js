@@ -1,4 +1,4 @@
-const AgreementConfirmation = require("../models/AgreementConfirmation"); // ✅ ĐÚNG
+const AgreementConfirmation = require("../models/AgreementConfirmation");
 const RentalRequest = require("../models/RentalRequest");
 const Room = require("../models/Room");
 const User = require("../models/User");
@@ -6,12 +6,14 @@ const crypto = require("crypto");
 const emailService = require("./emailService");
 
 class AgreementConfirmationService {
-  // Tạo confirmation từ rental request đã accept
+  // ✅ Tạo confirmation từ accepted request và gửi email
   async createConfirmationFromAcceptedRequest(rentalRequestId, agreementTerms) {
     try {
-      console.log("=== CREATING AGREEMENT CONFIRMATION ===");
-      console.log("Rental Request ID:", rentalRequestId);
-      console.log("Agreement Terms:", agreementTerms);
+      console.log(
+        "📧 Creating confirmation from accepted request:",
+        rentalRequestId
+      );
+      console.log("Agreement terms:", agreementTerms);
 
       // Lấy thông tin rental request với đầy đủ populate
       const rentalRequest = await RentalRequest.findById(rentalRequestId)
@@ -30,33 +32,28 @@ class AgreementConfirmationService {
         throw new Error("Rental request not found or not accepted");
       }
 
-      console.log("Rental request found:", rentalRequest._id);
-
       // Tạo confirmation token
       const confirmationToken = crypto.randomBytes(32).toString("hex");
 
-      // Lấy utilityRates và additionalFees từ room
+      // Lấy thông tin từ room
       const room = rentalRequest.roomId;
       const utilityRates = room.utilityRates || {};
       const additionalFees = room.additionalFees || [];
 
-      // Chuẩn bị data cho AgreementConfirmation
+      // Tạo confirmation data
       const confirmationData = {
         rentalRequestId: rentalRequestId,
         tenantId: rentalRequest.tenantId._id,
         landlordId: room.accommodationId.ownerId._id,
         roomId: room._id,
+        accommodationId: room.accommodationId._id,
         confirmationToken,
         agreementTerms: {
-          startDate: agreementTerms.startDate,
-          endDate: agreementTerms.endDate,
-          monthlyRent: agreementTerms.monthlyRent,
-          deposit: agreementTerms.deposit,
-          notes: agreementTerms.notes || "",
+          ...agreementTerms,
           utilityRates,
           additionalFees,
         },
-        status: "pending",
+        status: "pending", // ✅ Chưa confirm
         expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 hours
       };
 
@@ -65,14 +62,11 @@ class AgreementConfirmationService {
         confirmationData
       );
 
-      // Tạo agreement confirmation - CHỈ TẠO AgreementConfirmation
+      // Tạo confirmation record
       const confirmation = new AgreementConfirmation(confirmationData);
       await confirmation.save();
 
-      console.log(
-        "✅ AgreementConfirmation created successfully:",
-        confirmation._id
-      );
+      console.log("✅ AgreementConfirmation created:", confirmation._id);
 
       // Chuẩn bị data cho email
       const emailData = {
@@ -83,7 +77,6 @@ class AgreementConfirmationService {
         monthlyRent: agreementTerms.monthlyRent,
         deposit: agreementTerms.deposit,
         startDate: agreementTerms.startDate,
-        endDate: agreementTerms.endDate,
         confirmationToken,
         baseUrl: process.env.FRONTEND_URL || "http://localhost:3000",
         utilityRates,
@@ -100,182 +93,201 @@ class AgreementConfirmationService {
 
       return confirmation;
     } catch (error) {
-      console.error("Error creating agreement confirmation:", error);
+      console.error("❌ Error creating agreement confirmation:", error);
       throw error;
     }
   }
 
-  // Lấy confirmation theo token
+  // ✅ Lấy confirmation details từ token (public - cho tenant click email)
   async getConfirmationByToken(token) {
     try {
       const confirmation = await AgreementConfirmation.findOne({
         confirmationToken: token,
-        expiresAt: { $gt: new Date() },
+        expiresAt: { $gt: new Date() }, // Chưa hết hạn
       })
-        .populate("tenantId")
+        .populate("tenantId", "name email phoneNumber")
         .populate({
           path: "roomId",
+          select:
+            "roomNumber name type size capacity hasPrivateBathroom furnishingLevel amenities images",
           populate: {
             path: "accommodationId",
+            select: "name type address amenities contactInfo images",
             populate: {
               path: "ownerId",
+              select: "name email phoneNumber",
             },
           },
-        })
-        .populate("rentalRequestId");
+        });
 
-      return confirmation;
+      if (!confirmation) {
+        throw new Error("Confirmation not found or expired");
+      }
+
+      return {
+        _id: confirmation._id,
+        status: confirmation.status,
+        agreementTerms: confirmation.agreementTerms,
+        tenant: confirmation.tenantId,
+        landlord: confirmation.roomId.accommodationId.ownerId,
+        room: confirmation.roomId,
+        accommodation: confirmation.roomId.accommodationId,
+        expiresAt: confirmation.expiresAt,
+        createdAt: confirmation.createdAt,
+      };
     } catch (error) {
+      console.error("❌ Error getting confirmation by token:", error);
       throw error;
     }
   }
 
-  // Lấy confirmation theo ID
-  async getConfirmationById(confirmationId) {
-    try {
-      const confirmation = await AgreementConfirmation.findById(confirmationId)
-        .populate("tenantId")
-        .populate({
-          path: "roomId",
-          populate: {
-            path: "accommodationId",
-            populate: {
-              path: "ownerId",
-            },
-          },
-        })
-        .populate("rentalRequestId");
-
-      return confirmation;
-    } catch (error) {
-      console.error("Error getting confirmation by ID:", error);
-      throw error;
-    }
-  }
-
-  // Thêm method riêng cho payment (không populate tenant):
-  async getConfirmationForPayment(confirmationId) {
-    try {
-      const confirmation = await AgreementConfirmation.findById(confirmationId)
-        .populate({
-          path: "roomId",
-          populate: {
-            path: "accommodationId",
-            populate: {
-              path: "ownerId",
-            },
-          },
-        })
-        .populate("rentalRequestId");
-      // Không populate tenantId để giữ nguyên ObjectId
-
-      return confirmation;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // Xác nhận agreement
+  // ✅ Tenant xác nhận đồng ý hợp đồng
   async confirmAgreement(token, tenantId) {
     try {
+      console.log("✅ Tenant confirming agreement:", tenantId);
+
       const confirmation = await AgreementConfirmation.findOne({
         confirmationToken: token,
+        tenantId: tenantId,
         status: "pending",
         expiresAt: { $gt: new Date() },
       });
 
       if (!confirmation) {
-        throw new Error("Confirmation not found or expired");
+        throw new Error(
+          "Confirmation not found, already confirmed, or expired"
+        );
       }
 
-      if (confirmation.tenantId.toString() !== tenantId) {
-        throw new Error("Unauthorized to confirm this agreement");
-      }
-
+      // Update status to confirmed
       confirmation.status = "confirmed";
       confirmation.confirmedAt = new Date();
       await confirmation.save();
 
-      return confirmation;
+      console.log("✅ Agreement confirmed successfully");
+
+      return {
+        _id: confirmation._id,
+        status: confirmation.status,
+        confirmedAt: confirmation.confirmedAt,
+        message:
+          "Agreement confirmed successfully. You can now proceed with payment.",
+      };
     } catch (error) {
+      console.error("❌ Error confirming agreement:", error);
       throw error;
     }
   }
 
-  // Từ chối agreement
+  // ✅ Tenant từ chối hợp đồng
   async rejectAgreement(token, tenantId, reason) {
     try {
-      const confirmation = await this.getConfirmationByToken(token);
+      console.log(
+        "❌ Tenant rejecting agreement:",
+        tenantId,
+        "Reason:",
+        reason
+      );
+
+      const confirmation = await AgreementConfirmation.findOne({
+        confirmationToken: token,
+        tenantId: tenantId,
+        status: "pending",
+        expiresAt: { $gt: new Date() },
+      });
 
       if (!confirmation) {
-        throw new Error("Confirmation not found or expired");
+        throw new Error(
+          "Confirmation not found, already processed, or expired"
+        );
       }
 
-      if (confirmation.tenantId._id.toString() !== tenantId) {
-        throw new Error("Unauthorized to reject this agreement");
-      }
-
-      // Cập nhật status
+      // Update status to rejected
       confirmation.status = "rejected";
       confirmation.rejectedAt = new Date();
       confirmation.rejectionReason = reason;
       await confirmation.save();
 
-      // Cập nhật lại rental request về pending để landlord có thể xử lý lại
-      await RentalRequest.findByIdAndUpdate(confirmation.rentalRequestId, {
-        status: "pending",
-        landlordResponse: `Tenant đã từ chối hợp đồng: ${reason}`,
-      });
+      console.log("❌ Agreement rejected successfully");
 
-      return confirmation;
+      return {
+        _id: confirmation._id,
+        status: confirmation.status,
+        rejectedAt: confirmation.rejectedAt,
+        rejectionReason: reason,
+        message: "Agreement rejected successfully.",
+      };
     } catch (error) {
-      console.error("Error rejecting agreement:", error);
+      console.error("❌ Error rejecting agreement:", error);
       throw error;
     }
   }
 
-  // Lấy confirmations của tenant
+  // ✅ Lấy confirmation details by ID (sau khi confirm)
+  async getConfirmationById(confirmationId) {
+    try {
+      const confirmation = await AgreementConfirmation.findById(confirmationId)
+        .populate("tenantId", "name email phoneNumber")
+        .populate("landlordId", "name email phoneNumber")
+        .populate({
+          path: "roomId",
+          populate: {
+            path: "accommodationId",
+            populate: {
+              path: "ownerId",
+            },
+          },
+        });
+
+      if (!confirmation) {
+        throw new Error("Confirmation not found");
+      }
+
+      return confirmation;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // ✅ Lấy confirmations của tenant
   async getConfirmationsByTenant(tenantId) {
     try {
-      const confirmations = await AgreementConfirmation.find({
-        tenantId: tenantId,
-      })
+      const confirmations = await AgreementConfirmation.find({ tenantId })
         .populate({
           path: "roomId",
           populate: {
             path: "accommodationId",
           },
         })
-        .populate("paymentId")
-        .populate("tenancyAgreementId")
         .sort({ createdAt: -1 });
 
       return confirmations;
     } catch (error) {
-      console.error("Error getting confirmations by tenant:", error);
       throw error;
     }
   }
 
-  // Gửi lại email xác nhận
+  // ✅ Resend confirmation email
   async resendConfirmationEmail(confirmationId, tenantId) {
     try {
-      const confirmation = await this.getConfirmationById(confirmationId);
+      const confirmation = await AgreementConfirmation.findOne({
+        _id: confirmationId,
+        tenantId: tenantId,
+        status: "pending",
+      })
+        .populate("tenantId")
+        .populate({
+          path: "roomId",
+          populate: {
+            path: "accommodationId",
+            populate: {
+              path: "ownerId",
+            },
+          },
+        });
 
       if (!confirmation) {
-        throw new Error("Confirmation not found");
-      }
-
-      if (confirmation.tenantId._id.toString() !== tenantId) {
-        throw new Error("Unauthorized to resend this confirmation");
-      }
-
-      if (confirmation.status !== "pending") {
-        throw new Error("Can only resend pending confirmations");
-      }
-
-      if (confirmation.expiresAt < new Date()) {
-        throw new Error("Confirmation has expired");
+        throw new Error("Confirmation not found or not resendable");
       }
 
       // Chuẩn bị data cho email
@@ -288,7 +300,6 @@ class AgreementConfirmationService {
         monthlyRent: confirmation.agreementTerms.monthlyRent,
         deposit: confirmation.agreementTerms.deposit,
         startDate: confirmation.agreementTerms.startDate,
-        endDate: confirmation.agreementTerms.endDate,
         confirmationToken: confirmation.confirmationToken,
         baseUrl: process.env.FRONTEND_URL || "http://localhost:3000",
         utilityRates: confirmation.agreementTerms.utilityRates,
@@ -301,76 +312,213 @@ class AgreementConfirmationService {
         emailData
       );
 
+      console.log("✅ Confirmation email resent successfully");
       return { message: "Email resent successfully" };
     } catch (error) {
-      console.error("Error resending confirmation email:", error);
+      console.error("❌ Error resending confirmation email:", error);
       throw error;
     }
   }
 
-  // Thống kê confirmations
-  async getConfirmationStats(filters = {}) {
+  // ✅ Admin stats
+  async getConfirmationStats(queryParams) {
     try {
-      let matchStage = {};
+      const { startDate, status } = queryParams;
 
-      if (filters.startDate && filters.endDate) {
-        matchStage.createdAt = {
-          $gte: filters.startDate,
-          $lte: filters.endDate,
+      let query = {};
+
+      if (startDate) {
+        query.createdAt = {
+          $gte: new Date(startDate),
         };
       }
 
-      const stats = await AgreementConfirmation.aggregate([
-        { $match: matchStage },
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-          },
-        },
-      ]);
+      if (status) {
+        query.status = status;
+      }
 
-      // Format stats
-      const formattedStats = {
-        pending: 0,
-        confirmed: 0,
-        rejected: 0,
-        expired: 0,
-        total: 0,
-      };
-
-      stats.forEach((stat) => {
-        formattedStats[stat._id] = stat.count;
-        formattedStats.total += stat.count;
+      const total = await AgreementConfirmation.countDocuments(query);
+      const pending = await AgreementConfirmation.countDocuments({
+        ...query,
+        status: "pending",
+      });
+      const confirmed = await AgreementConfirmation.countDocuments({
+        ...query,
+        status: "confirmed",
+      });
+      const rejected = await AgreementConfirmation.countDocuments({
+        ...query,
+        status: "rejected",
+      });
+      const expired = await AgreementConfirmation.countDocuments({
+        ...query,
+        status: "pending",
+        expiresAt: { $lt: new Date() },
       });
 
-      return formattedStats;
+      return {
+        total,
+        pending,
+        confirmed,
+        rejected,
+        expired,
+        success_rate: total > 0 ? ((confirmed / total) * 100).toFixed(2) : 0,
+      };
     } catch (error) {
-      console.error("Error getting confirmation stats:", error);
       throw error;
     }
   }
 
-  // Kiểm tra và hết hạn các confirmation cũ
+  // ✅ Expire old confirmations
   async expireOldConfirmations() {
     try {
-      const expiredConfirmations = await AgreementConfirmation.updateMany(
+      const result = await AgreementConfirmation.updateMany(
         {
           status: "pending",
           expiresAt: { $lt: new Date() },
         },
         {
           status: "expired",
+          expiredAt: new Date(),
         }
       );
 
-      console.log(
-        `Expired ${expiredConfirmations.nModified} old confirmations`
-      );
-      return expiredConfirmations;
+      console.log(`✅ Expired ${result.modifiedCount} old confirmations`);
+      return {
+        expired_count: result.modifiedCount,
+        message: `${result.modifiedCount} confirmations expired`,
+      };
     } catch (error) {
-      console.error("Error expiring old confirmations:", error);
       throw error;
+    }
+  }
+
+  // ✅ THÊM: Update payment status
+  async updatePaymentStatus(confirmationId, paymentStatus, paymentId) {
+    try {
+      console.log(
+        "📝 Updating payment status for confirmation:",
+        confirmationId
+      );
+      console.log("📝 New status:", paymentStatus);
+
+      const updateData = {
+        paymentStatus,
+      };
+
+      if (paymentStatus === "completed") {
+        updateData.paidAt = new Date();
+        updateData.paymentId = paymentId;
+      }
+
+      const confirmation = await AgreementConfirmation.findByIdAndUpdate(
+        confirmationId,
+        updateData,
+        { new: true }
+      ).populate("tenantId landlordId roomId");
+
+      if (!confirmation) {
+        throw new Error("Confirmation not found");
+      }
+
+      console.log("✅ Payment status updated successfully");
+
+      // ✅ THÊM: Nếu payment completed, thêm tenant vào room và tạo tenancy agreement
+      if (paymentStatus === "completed") {
+        await this.handlePaymentCompleted(confirmation);
+      }
+
+      return confirmation;
+    } catch (error) {
+      console.error("❌ Error updating payment status:", error);
+      throw error;
+    }
+  }
+
+  // ✅ THÊM: Xử lý khi payment completed
+  async handlePaymentCompleted(confirmation) {
+    try {
+      console.log(
+        "🎉 Processing completed payment for confirmation:",
+        confirmation._id
+      );
+
+      // 1. Thêm tenant vào room
+      const Room = require("../models/Room");
+      await Room.findByIdAndUpdate(confirmation.roomId._id, {
+        currentTenant: confirmation.tenantId._id,
+        isAvailable: false,
+        $push: {
+          tenantHistory: {
+            tenantId: confirmation.tenantId._id,
+            startDate: confirmation.agreementTerms.startDate,
+            status: "active",
+          },
+        },
+      });
+
+      console.log("✅ Tenant added to room successfully");
+
+      // 2. Tạo tenancy agreement
+      const TenancyAgreement = require("../models/TenancyAgreement");
+      const tenancyAgreement = new TenancyAgreement({
+        tenantId: confirmation.tenantId._id,
+        roomId: confirmation.roomId._id,
+        accommodationId: confirmation.roomId.accommodationId,
+        landlordId: confirmation.landlordId._id,
+        startDate: confirmation.agreementTerms.startDate,
+        endDate: confirmation.agreementTerms.endDate,
+        monthlyRent: confirmation.agreementTerms.monthlyRent,
+        deposit: confirmation.agreementTerms.deposit,
+        notes: confirmation.agreementTerms.notes,
+        utilityRates: confirmation.agreementTerms.utilityRates,
+        additionalFees: confirmation.agreementTerms.additionalFees,
+        status: "active",
+      });
+
+      await tenancyAgreement.save();
+      console.log("✅ Tenancy agreement created successfully");
+
+      // 3. Update confirmation với tenancy agreement ID
+      confirmation.tenancyAgreementId = tenancyAgreement._id;
+      await confirmation.save();
+
+      // 4. Gửi email thông báo thành công với thông tin landlord
+      await this.sendPaymentCompletedEmail(confirmation);
+
+      console.log("🎉 Payment completion process finished successfully");
+    } catch (error) {
+      console.error("❌ Error in handlePaymentCompleted:", error);
+      // Không throw error để không làm gián đoạn payment flow
+    }
+  }
+
+  // ✅ THÊM: Gửi email khi payment completed
+  async sendPaymentCompletedEmail(confirmation) {
+    try {
+      const emailService = require("./emailService");
+
+      const emailData = {
+        to: confirmation.tenantId.email,
+        subject: "🎉 Payment Successful - Welcome to Your New Home!",
+        template: "paymentSuccess",
+        context: {
+          tenantName: confirmation.tenantId.name,
+          propertyName: confirmation.roomId.accommodationId.name,
+          roomName: confirmation.roomId.name,
+          amount: confirmation.agreementTerms.deposit,
+          landlordName: confirmation.landlordId.name,
+          landlordEmail: confirmation.landlordId.email,
+          landlordPhone: confirmation.landlordId.phoneNumber,
+          startDate: confirmation.agreementTerms.startDate,
+          monthlyRent: confirmation.agreementTerms.monthlyRent,
+        },
+      };
+
+      await emailService.sendEmail(emailData);
+      console.log("✅ Payment completed email sent successfully");
+    } catch (error) {
+      console.error("❌ Failed to send payment completed email:", error);
     }
   }
 }

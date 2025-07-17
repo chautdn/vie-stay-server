@@ -1,4 +1,6 @@
 const tenancyAgreementService = require("../services/tenancyAgreementService");
+const Room = require("../models/Room");
+const User = require("../models/User");
 
 // Tạo hợp đồng mới
 exports.createAgreement = async (req, res) => {
@@ -22,47 +24,7 @@ exports.getAgreementsByLandlord = async (req, res) => {
   }
 };
 
-// Lấy người thuê hiện tại của phòng
-exports.getTenantByRoom = async (req, res) => {
-  try {
-    const agreement = await tenancyAgreementService.getTenantByRoom(
-      req.params.roomId
-    );
-    if (!agreement) {
-      return res.status(404).json({ message: "Không tìm thấy hợp đồng." });
-    }
 
-    const data = {
-      tenant: {
-        name: agreement.tenantId.name,
-        email: agreement.tenantId.email,
-        phoneNumber: agreement.tenantId.phoneNumber,
-        profileImage: agreement.tenantId.profileImage,
-      },
-      contract: {
-        startDate: agreement.startDate,
-        endDate: agreement.endDate,
-        monthlyRent: agreement.monthlyRent,
-        totalMonthlyCost: agreement.totalMonthlyCost,
-        status: agreement.status,
-      },
-    };
-
-    res.status(200).json(data);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Lấy danh sách người đang thuê
-exports.getCurrentTenants = async (req, res) => {
-  try {
-    const tenants = await tenancyAgreementService.getCurrentTenants();
-    res.status(200).json(tenants);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
 
 // Kết thúc hợp đồng
 exports.terminateAgreement = async (req, res) => {

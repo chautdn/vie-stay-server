@@ -25,7 +25,6 @@ class EmailService {
       monthlyRent,
       deposit,
       startDate,
-      endDate,
       confirmationToken,
       baseUrl,
       utilityRates,
@@ -177,7 +176,7 @@ class EmailService {
       <ul>
         <li><strong>Phòng:</strong> ${roomName}</li>
         <li><strong>Tòa nhà:</strong> ${accommodationName}</li>
-        <li><strong>Thời gian thuê:</strong> ${new Date(startDate).toLocaleDateString("vi-VN")} - ${new Date(endDate).toLocaleDateString("vi-VN")}</li>
+        <li><strong>Thời gian thuê: Bắt đầu từ</strong> ${new Date(startDate).toLocaleDateString("vi-VN")} </li>
         <li><strong>Giá thuê cơ bản:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(monthlyRent)}/tháng</li>
         <li><strong>Tiền cọc:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(deposit)}</li>
       </ul>

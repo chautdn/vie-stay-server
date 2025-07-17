@@ -1,23 +1,30 @@
 const express = require("express");
 const roomController = require("../controllers/roomController");
-const {
-  protect,
-  restrictTo,
-} = require("../controllers/authenticateController");
+const { protect, restrictTo } = require("../controllers/authenticateController");
 
 const router = express.Router();
 
-router.get("/", roomController.getAllRoom);
+// ✅ Public routes (không cần auth)
+router.get("/", roomController.getAllRooms);
 router.get("/search", roomController.searchRooms);
+router.get("/new-posts", roomController.getNewestRoom); // ✅ Lấy 10 bài đăng mới nhất
 
 // ✅ Protected routes
+// ✅ Routes theo roomId (đặt cuối để tránh conflict)
+router.get("/:roomId", roomController.getRoomById);
 router.use(protect); // Apply auth cho tất cả routes phía dưới
 
+// ✅ Routes theo accommodation
 router.get(
   "/accommodation/:accommodationId",
   roomController.getAllRoomsByAccommodateId
 );
-router.get("/:roomId", restrictTo("landlord"), roomController.getRoomById);
+router.post(
+  "/accommodation/:accommodationId/create", // ✅ SỬA: Rõ ràng hơn
+  restrictTo("landlord"),
+  roomController.createRoom
+);
+
 router.get(
   "/:roomId/tenants",
   restrictTo("landlord"),
@@ -28,21 +35,21 @@ router.get(
   restrictTo("landlord"),
   roomController.getAllRequestsInRoom
 );
-router.post("/:accommodationId", restrictTo("landlord"), roomController.createRoom);
 router.put(
   "/:roomId/update",
   restrictTo("landlord"),
   roomController.updateRoom
 );
-router.patch(
-  "/:roomId/deactivate",
-  restrictTo("landlord"),
+
+router.patch("/:roomId/deactivate", 
+  restrictTo("landlord"), 
   roomController.deactivateRoom
 );
-router.patch(
-  "/:roomId/reactivate",
-  restrictTo("landlord"),
+
+router.patch("/:roomId/reactivate", 
+  restrictTo("landlord"), 
   roomController.reactivateRoom
 );
 router.delete("/:roomId", restrictTo("landlord"), roomController.deleteRoom);
+
 module.exports = router;

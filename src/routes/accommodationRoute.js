@@ -1,32 +1,56 @@
 const accommodationController = require("../controllers/accommodationController");
 const express = require("express");
-
 const {
   protect,
   restrictTo,
 } = require("../controllers/authenticateController");
+
 const router = express.Router();
 
-// Protect all routes
-router.use(protect);
-router.use(restrictTo("landlord", "admin"));
+// ✅ PUBLIC ROUTES (no authentication needed)
+// Add any public routes here if needed
 
-// Get accommodations by owner (for the current user)
-router.get("/me", accommodationController.getAccommodationByOwnerId);
+// ✅ PROTECTED ROUTES (require authentication)
+router.use(protect); // Apply authentication to all routes below
 
-// Get all accommodations (with filtering)
-router.get("/", accommodationController.getAccommodations);
+// ✅ SPECIFIC ROUTES (must come before generic /:id route)
+router.get(
+  "/me",
+  restrictTo("landlord"),
+  accommodationController.getAccommodationByOwnerId
+);
 
-// Get single accommodation by ID
-router.get("/:id", accommodationController.getAccommodationById);
+// ✅ CRUD ROUTES
+router.post(
+  "/",
+  restrictTo("landlord"),
+  accommodationController.createAccommodation
+);
 
-// Create new accommodation
-router.post("/", accommodationController.createAccommodation);
+router.get(
+  "/",
+  restrictTo("landlord", "admin"),
+  accommodationController.getAccommodations
+);
 
-// Update accommodation
-router.put("/:id", accommodationController.updateAccommodation);
+// ✅ SINGLE ACCOMMODATION ROUTES (must come after specific routes)
+router.get(
+  "/:id",
+  restrictTo("landlord", "admin"),
+  accommodationController.getAccommodationById
+);
 
-// Update accommodation status
-router.put("/:id/status", accommodationController.updateStatus);
+router.put(
+  "/:id",
+  restrictTo("landlord"),
+  accommodationController.updateAccommodation
+);
+
+// ✅ STATUS UPDATE (admin only)
+router.put(
+  "/:id/status",
+  restrictTo("admin"),
+  accommodationController.updateStatus
+);
 
 module.exports = router;

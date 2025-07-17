@@ -17,16 +17,16 @@ function normalizeVietnamese(text) {
  * @desc    Tạo mới một nhà trọ
  * @route   POST /api/accommodations
  */
-exports.getAccommodationById = async (req, res) => {  
+exports.getAccommodationById = async (req, res) => {
   try {
     const accommodation = await Accommodation.findById(req.params.id);
     if (!accommodation) {
-      return res.status(404).json({ error: 'Accommodation not found' });
+      return res.status(404).json({ error: "Accommodation not found" });
     }
     // MODIFIED: Bọc dữ liệu trả về trong object { data: ... } cho đồng nhất
     res.status(200).json({ data: accommodation });
   } catch (error) {
-    res.status(500).json({ error: 'Invalid ID format or server error' });
+    res.status(500).json({ error: "Invalid ID format or server error" });
   }
 };
 
@@ -67,21 +67,22 @@ exports.updateAccommodation = async (req, res) => {
 
     if (availableRooms > totalRooms) {
       return res.status(400).json({
-        error: 'Validation failed: availableRooms: Số phòng trống không thể lớn hơn tổng số phòng'
+        error:
+          "Validation failed: availableRooms: Số phòng trống không thể lớn hơn tổng số phòng",
       });
     }
 
     // 1. Lấy bản ghi hiện tại từ DB để so sánh
     const existingAccommodation = await Accommodation.findById(accommodationId);
     if (!existingAccommodation) {
-      return res.status(404).json({ error: 'Không tìm thấy nhà trọ.' });
+      return res.status(404).json({ error: "Không tìm thấy nhà trọ." });
     }
 
     // 2. So sánh các trường quan trọng để quyết định có cần duyệt lại không
     let requiresReApproval = false;
 
     // Danh sách các trường quan trọng (dạng chuỗi đơn giản)
-    const criticalStringFields = ['name', 'type'];
+    const criticalStringFields = ["name", "type"];
     for (const field of criticalStringFields) {
       if (existingAccommodation[field] !== updatePayload[field]) {
         requiresReApproval = true;
@@ -91,25 +92,36 @@ exports.updateAccommodation = async (req, res) => {
 
     // So sánh các trường phức tạp hơn (object, array) bằng cách chuyển thành chuỗi JSON
     if (!requiresReApproval) {
-      if (JSON.stringify(existingAccommodation.address) !== JSON.stringify(updatePayload.address)) {
+      if (
+        JSON.stringify(existingAccommodation.address) !==
+        JSON.stringify(updatePayload.address)
+      ) {
         requiresReApproval = true;
-      }
-      else if (JSON.stringify(existingAccommodation.images) !== JSON.stringify(updatePayload.images)) {
+      } else if (
+        JSON.stringify(existingAccommodation.images) !==
+        JSON.stringify(updatePayload.images)
+      ) {
         requiresReApproval = true;
-      }
-      else if (JSON.stringify(existingAccommodation.documents) !== JSON.stringify(updatePayload.documents)) {
+      } else if (
+        JSON.stringify(existingAccommodation.documents) !==
+        JSON.stringify(updatePayload.documents)
+      ) {
         requiresReApproval = true;
       }
     }
 
     // 3. Chuẩn bị dữ liệu cuối cùng để cập nhật
     const finalUpdateData = { ...updatePayload };
-    let successMessage = 'Cập nhật nhà trọ thành công!';
+    let successMessage = "Cập nhật nhà trọ thành công!";
 
     // Chỉ chuyển về "pending" nếu trạng thái hiện tại là "approved" và có thay đổi quan trọng
-    if (requiresReApproval && existingAccommodation.approvalStatus === 'approved') {
-      finalUpdateData.approvalStatus = 'pending';
-      successMessage = 'Cập nhật thành công! Các thay đổi quan trọng cần được duyệt lại.';
+    if (
+      requiresReApproval &&
+      existingAccommodation.approvalStatus === "approved"
+    ) {
+      finalUpdateData.approvalStatus = "pending";
+      successMessage =
+        "Cập nhật thành công! Các thay đổi quan trọng cần được duyệt lại.";
     }
 
     // 4. Thực hiện cập nhật vào database
@@ -120,11 +132,10 @@ exports.updateAccommodation = async (req, res) => {
     );
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: updatedAccommodation,
       message: successMessage, // Trả về thông báo động cho frontend
     });
-
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -236,15 +247,27 @@ exports.getAccommodationByOwnerId = catchAsync(async (req, res) => {
   });
 });
 
+// ✅ FIXED: Single, improved getAccommodationById function
 exports.getAccommodationById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     console.log("🔍 GET /api/accommodations/:id");
     console.log("Accommodation ID:", id);
     console.log("User from token:", req.user);
 
-    const accommodation = await Accommodation.findById(id);
+    // Validate ObjectId format
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid accommodation ID format",
+      });
+    }
+
+    const accommodation = await Accommodation.findById(id).populate(
+      "ownerId",
+      "name email phoneNumber profileImage"
+    );
 
     if (!accommodation) {
       return res.status(404).json({
@@ -253,17 +276,22 @@ exports.getAccommodationById = async (req, res) => {
       });
     }
 
-    // Check if user owns this accommodation (landlord can only access their own)
-    if (req.user.role.includes("landlord") && accommodation.ownerId.toString() !== req.user.id) {
-      return res.status(403).json({
-        status: "error",
-        message: "You can only access your own accommodations",
-      });
+    // ✅ IMPORTANT: Check ownership for landlords
+    if (req.user.role.includes("landlord")) {
+      if (accommodation.ownerId._id.toString() !== req.user.id) {
+        return res.status(403).json({
+          status: "error",
+          message: "You can only access your own accommodations",
+        });
+      }
     }
 
+    // ✅ FIX: Proper response format
     res.status(200).json({
       status: "success",
-      data: accommodation,
+      data: {
+        accommodation: accommodation,
+      },
     });
   } catch (error) {
     console.error("❌ Error fetching accommodation:", error);

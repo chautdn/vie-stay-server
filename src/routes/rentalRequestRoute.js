@@ -6,39 +6,79 @@ const {
   restrictTo,
 } = require("../controllers/authenticateController");
 
+// Base protection
 router.use(protect);
-router.use(restrictTo("landlord", "tenant"));
-// Tạo yêu cầu thuê phòng
-router.post("/", rentalRequestController.createRentalRequest);
 
-// Lấy yêu cầu theo landlord
-router.get("/me", rentalRequestController.getRequestsByLandlord);
-
-// Lấy yêu cầu theo toà nhà
+// Public routes (cả landlord và tenant)
 router.get(
-  "/accommodation/:accommodationId",
-  rentalRequestController.getRequestsByAccommodation
+  "/:requestId/detail",
+  rentalRequestController.getRentalRequestDetails
 );
 
-router.patch("/:requestId/accept", rentalRequestController.acceptRentalRequest);
+// Tenant only routes
+router.get("/my-request", rentalRequestController.getMyRentalRequests);
+router.post("/", rentalRequestController.createRentalRequest);
+router.patch(
+  "/:requestId/withdraw",
+  rentalRequestController.withdrawRentalRequest
+);
 
-router.patch("/:requestId/reject", rentalRequestController.rejectRentalRequest);
+// Landlord only routes
+router.get(
+  "/me",
+  restrictTo("landlord"),
+  rentalRequestController.getRequestsByLandlord
+);
 
-router.get("/:requestId", rentalRequestController.getRentalRequestDetails);
+router.get(
+  "/stats",
+  restrictTo("landlord"),
+  rentalRequestController.getRequestStats
+);
+router.get(
+  "/accommodation/:accommodationId",
+  restrictTo("landlord"),
+  rentalRequestController.getRequestsByAccommodation
+);
+router.get(
+  "/room/:roomId",
+  restrictTo("landlord"),
+  rentalRequestController.getRequestsByRoom
+);
+router.patch(
+  "/:requestId/accept",
+  restrictTo("landlord"),
+  rentalRequestController.acceptRentalRequest
+);
+router.patch(
+  "/:requestId/reject",
+  restrictTo("landlord"),
+  rentalRequestController.rejectRentalRequest
+);
+router.patch(
+  "/:requestId/viewed",
+  restrictTo("landlord"),
+  rentalRequestController.markAsViewed
+);
 
-// Lấy yêu cầu theo phòng
-router.get("/room/:roomId", rentalRequestController.getRequestsByRoom);
+// Admin only routes
 
-// Lấy yêu cầu theo tenant
-router.get("/tenant/:tenantId", rentalRequestController.getRequestsByTenant);
+router.patch(
+  "/:requestId/status",
+  restrictTo("admin"),
+  rentalRequestController.updateRequestStatus
+);
+router.get(
+  "/tenant/:tenantId",
+  restrictTo("admin"),
+  rentalRequestController.getRequestsByTenant
+);
 
-// Cập nhật trạng thái yêu cầu
-router.patch("/status/:requestId", rentalRequestController.updateRequestStatus);
-
-// Xoá yêu cầu
-router.delete("/:requestId", rentalRequestController.deleteRentalRequest);
-
-// Đánh dấu đã xem
-router.patch("/viewed/:requestId", rentalRequestController.markAsViewed);
+// Mixed permission routes (cần kiểm tra ownership trong controller)
+router.delete(
+  "/:requestId",
+  restrictTo("admin"),
+  rentalRequestController.deleteRentalRequest
+);
 
 module.exports = router;
