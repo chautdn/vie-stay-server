@@ -68,6 +68,7 @@ const postSchema = new mongoose.Schema(
       required: true,
       enum: [
         "single_room",
+        "double_room",
         "shared_room",
         "apartment",
         "house",

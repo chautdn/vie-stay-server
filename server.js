@@ -28,7 +28,7 @@ app.use(
 );
 
 // ✅ SỬA: General JSON parsing for all other routes (moved after PayOS webhook)
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "50mb" }));
 
 app.use(
   helmet.contentSecurityPolicy({
@@ -68,9 +68,10 @@ app.use(
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 

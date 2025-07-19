@@ -177,7 +177,7 @@ const getRequestsByTenant = async (
       })
       .populate({
         path: "roomId",
-        select: "name type baseRent images ",
+        select: "name type baseRent images capacity ",
       })
       .populate({
         path: "accommodationId",

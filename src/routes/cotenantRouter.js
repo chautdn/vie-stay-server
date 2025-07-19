@@ -15,7 +15,7 @@ const {
 
 router.use(protect); // Bảo vệ tất cả các route bên dưới
 
-router.post("/rooms/:roomId/request-co-tenant", requestCoTenant);
+router.post("/co-tenant-requests/room/:roomId/create", requestCoTenant);
 router.get("/co-tenant-requests", getCoTenantRequests);
 router.get("/co-tenant-requests/me", getCoTenantRequestsByLandlord); // Assuming this is for landlord to view requests
 router.post("/co-tenant-requests/:requestId/approve", approveCoTenantRequest);

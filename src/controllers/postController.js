@@ -907,11 +907,11 @@ const searchPosts = async (req, res) => {
     if (filters.maxRent && !isNaN(parseInt(filters.maxRent))) {
       cleanedFilters.maxRent = parseInt(filters.maxRent);
     }
-    if (filters.minArea && !isNaN(parseInt(filters.minArea))) {
-      cleanedFilters.minArea = parseInt(filters.minArea);
+    if (filters.minSize && !isNaN(parseInt(filters.minSize))) {
+      cleanedFilters.minSize = parseInt(filters.minSize);
     }
-    if (filters.maxArea && !isNaN(parseInt(filters.maxArea))) {
-      cleanedFilters.maxArea = parseInt(filters.maxArea);
+    if (filters.maxSize && !isNaN(parseInt(filters.maxSize))) {
+      cleanedFilters.maxSize = parseInt(filters.maxSize);
     }
     if (filters.capacity && !isNaN(parseInt(filters.capacity))) {
       cleanedFilters.capacity = parseInt(filters.capacity);
@@ -953,11 +953,11 @@ const searchPosts = async (req, res) => {
       if (cleanedFilters.maxRent) query.rent.$lte = cleanedFilters.maxRent;
     }
 
-    // Area range
-    if (cleanedFilters.minArea || cleanedFilters.maxArea) {
+    // Size range
+    if (cleanedFilters.minSize || cleanedFilters.maxSize) {
       query.area = {};
-      if (cleanedFilters.minArea) query.area.$gte = cleanedFilters.minArea;
-      if (cleanedFilters.maxArea) query.area.$lte = cleanedFilters.maxArea;
+      if (cleanedFilters.minSize) query.area.$gte = cleanedFilters.minSize;
+      if (cleanedFilters.maxSize) query.area.$lte = cleanedFilters.maxSize;
     }
 
     // Amenities
