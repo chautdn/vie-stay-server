@@ -636,7 +636,6 @@ const searchRooms = async (filters, page = 1, limit = 10) => {
     console.log("🎯 Room query:", query);
     console.log("🏠 Accommodation query:", accommodationQuery);
 
-    let rooms;
 
     // ✅ SỬA: Simplified query logic
     if (Object.keys(accommodationQuery).length > 0) {

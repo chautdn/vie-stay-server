@@ -717,8 +717,337 @@ const upgradeToFeatured = async (req, res) => {
   }
 };
 
-// Rest of the controller methods remain the same...
-// [Include all other existing methods: getUserPosts, updatePost, deletePost, etc.]
+// Extend featured post
+const extendFeatured = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { additionalDays } = req.body;
+    const userId = req.user._id;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Check ownership
+    if (post.userId.toString() !== userId.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to extend this post" });
+    }
+
+    if (post.featuredType === "THUONG") {
+      return res.status(400).json({ message: "Cannot extend regular posts" });
+    }
+
+    // Calculate cost
+    const cost = calculateCost(post.featuredType, additionalDays);
+
+    // Get user's wallet balance
+    const user = await User.findById(userId);
+    if (user.wallet.balance < cost) {
+      return res.status(400).json({
+        message: "Insufficient wallet balance",
+        required: cost,
+        available: user.wallet.balance,
+      });
+    }
+
+    // Deduct from wallet
+    user.wallet.balance -= cost;
+    await user.save();
+
+    // Create transaction record
+    const transaction = await Transaction.create({
+      user: userId,
+      type: "payment",
+      amount: cost,
+      status: "success",
+      provider: "wallet",
+      message: `Extend ${post.featuredType} featured post for ${additionalDays} days`,
+    });
+
+    // Extend post
+    await post.extendFeatured(additionalDays);
+
+    res.status(200).json({
+      message: "Post extended successfully",
+      cost,
+      newBalance: user.wallet.balance,
+      featuredUntil: post.featuredEndDate,
+      transactionId: transaction._id,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Toggle auto-renewal
+const toggleAutoRenewal = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { autoRenew, autoRenewDuration = 7 } = req.body;
+    const userId = req.user._id;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Check ownership
+    if (post.userId.toString() !== userId.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to modify this post" });
+    }
+
+    post.autoRenew = autoRenew;
+    if (autoRenew) {
+      post.autoRenewDuration = autoRenewDuration;
+    }
+    await post.save();
+
+    res.status(200).json({
+      message: `Auto-renewal ${autoRenew ? "enabled" : "disabled"}`,
+      autoRenew: post.autoRenew,
+      autoRenewDuration: post.autoRenewDuration,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Increment contact count
+const incrementContactCount = async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const post = await Post.findByIdAndUpdate(
+      postId,
+      { $inc: { contactCount: 1 } },
+      { new: true }
+    );
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    res.status(200).json({ message: "Contact count incremented" });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Get featured posts
+const getFeaturedPosts = async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+
+    const posts = await Post.getFeatured()
+      .populate("userId", "name profileImage")
+      .limit(Number(limit));
+
+    res.status(200).json({ posts });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Get post by ID
+const getPostById = async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const post = await Post.findById(postId)
+      .populate("userId", "name profileImage phoneNumber email")
+      .populate("roomId", "name roomNumber capacity")
+      .populate("accommodationId", "name type address");
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Increment view count
+    post.viewCount += 1;
+    await post.save();
+
+    res.status(200).json({ post });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Search posts with basic filters (similar to room search)
+const searchPosts = async (req, res) => {
+  try {
+    const filters = req.query;
+    const cleanedFilters = {};
+
+    // Handle district mapping
+    if (filters.district) {
+      const districtMapping = {
+        "hai-chau": "Quận Hải Châu",
+        "thanh-khe": "Quận Thanh Khê",
+        "son-tra": "Quận Sơn Trà",
+        "ngu-hanh-son": "Quận Ngũ Hành Sơn",
+        "lien-chieu": "Quận Liên Chiểu",
+        "cam-le": "Quận Cẩm Lệ",
+        "hoa-vang": "Huyện Hòa Vang",
+      };
+
+      cleanedFilters.district =
+        districtMapping[filters.district] || filters.district;
+    }
+
+    // Handle basic string filters
+    if (filters.propertyType)
+      cleanedFilters.propertyType = filters.propertyType;
+
+    // Handle boolean filters
+    if (filters.isAvailable !== undefined) {
+      cleanedFilters.isAvailable =
+        filters.isAvailable === "true" || filters.isAvailable === true;
+    }
+    if (filters.hasPrivateBathroom !== undefined) {
+      cleanedFilters.hasPrivateBathroom =
+        filters.hasPrivateBathroom === "true" ||
+        filters.hasPrivateBathroom === true;
+    }
+
+    // Handle numeric filters
+    if (filters.minRent && !isNaN(parseInt(filters.minRent))) {
+      cleanedFilters.minRent = parseInt(filters.minRent);
+    }
+    if (filters.maxRent && !isNaN(parseInt(filters.maxRent))) {
+      cleanedFilters.maxRent = parseInt(filters.maxRent);
+    }
+    if (filters.minSize && !isNaN(parseInt(filters.minSize))) {
+      cleanedFilters.minSize = parseInt(filters.minSize);
+    }
+    if (filters.maxSize && !isNaN(parseInt(filters.maxSize))) {
+      cleanedFilters.maxSize = parseInt(filters.maxSize);
+    }
+    if (filters.capacity && !isNaN(parseInt(filters.capacity))) {
+      cleanedFilters.capacity = parseInt(filters.capacity);
+    }
+
+    // Handle amenities array
+    if (filters.amenities) {
+      if (Array.isArray(filters.amenities)) {
+        cleanedFilters.amenities = filters.amenities;
+      } else if (typeof filters.amenities === "string") {
+        cleanedFilters.amenities = filters.amenities.split(",");
+      }
+    }
+
+    // Build MongoDB query
+    let query = {
+      status: "approved",
+      isAvailable: cleanedFilters.isAvailable !== false, // Default to true
+    };
+
+    // Apply filters to query
+    if (cleanedFilters.district) {
+      query["address.district"] = cleanedFilters.district;
+    }
+    if (cleanedFilters.propertyType) {
+      query.propertyType = cleanedFilters.propertyType;
+    }
+    if (cleanedFilters.hasPrivateBathroom !== undefined) {
+      query.hasPrivateBathroom = cleanedFilters.hasPrivateBathroom;
+    }
+    if (cleanedFilters.capacity) {
+      query.capacity = { $gte: cleanedFilters.capacity };
+    }
+
+    // Rent range
+    if (cleanedFilters.minRent || cleanedFilters.maxRent) {
+      query.rent = {};
+      if (cleanedFilters.minRent) query.rent.$gte = cleanedFilters.minRent;
+      if (cleanedFilters.maxRent) query.rent.$lte = cleanedFilters.maxRent;
+    }
+
+    // Size range
+    if (cleanedFilters.minSize || cleanedFilters.maxSize) {
+      query.area = {};
+      if (cleanedFilters.minSize) query.area.$gte = cleanedFilters.minSize;
+      if (cleanedFilters.maxSize) query.area.$lte = cleanedFilters.maxSize;
+    }
+
+    // Amenities
+    if (cleanedFilters.amenities && cleanedFilters.amenities.length > 0) {
+      query.amenities = { $in: cleanedFilters.amenities };
+    }
+
+    // Execute search
+    const posts = await Post.find(query)
+      .populate("userId", "name profileImage phoneNumber")
+      .sort({
+        featuredType: 1, // Featured posts first
+        createdAt: -1, // Newest first
+      });
+
+    // Format posts similar to room formatting
+    const formattedPosts = posts.map((post) => {
+      const postObj = post.toObject();
+
+      return {
+        ...postObj,
+        // Format address
+        fullAddress: postObj.address
+          ? `${postObj.address.street}, ${postObj.address.ward}, ${postObj.address.district}`
+          : "Địa chỉ đang cập nhật",
+        district: postObj.address?.district || "",
+        ward: postObj.address?.ward || "",
+        city: "Đà Nẵng",
+
+        // Format user info
+        user: postObj.userId
+          ? {
+              _id: postObj.userId._id,
+              name: postObj.userId.name,
+              phone: postObj.userId.phoneNumber,
+              avatar: postObj.userId.profileImage,
+            }
+          : {
+              name: "Người đăng",
+              phone: "Đang cập nhật",
+            },
+      };
+    });
+
+    res.status(200).json({
+      status: "success",
+      results: formattedPosts.length,
+      data: {
+        posts: formattedPosts,
+      },
+      filters: cleanedFilters,
+      message: `Found ${formattedPosts.length} posts matching your criteria`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
 
 module.exports = {
   createPost: [upload.array("images", 10), createPost],
@@ -756,87 +1085,92 @@ module.exports = {
       });
     }
   },
-  updatePost: [upload.array("images", 10), async (req, res) => {
-    try {
-      const { postId } = req.params;
-      const userId = req.user._id;
-      const updateData = req.body;
+  updatePost: [
+    upload.array("images", 10),
+    async (req, res) => {
+      try {
+        const { postId } = req.params;
+        const userId = req.user._id;
+        const updateData = req.body;
 
-      const post = await Post.findById(postId);
-      if (!post) {
-        return res.status(404).json({ message: "Post not found" });
-      }
-
-      // Check ownership
-      if (post.userId.toString() !== userId.toString()) {
-        return res
-          .status(403)
-          .json({ message: "Not authorized to update this post" });
-      }
-
-      // Handle image uploads if provided
-      if (req.files && req.files.length > 0) {
-        try {
-          const uploadPromises = req.files.map((file, index) => {
-            const filename = `post-${userId}-${Date.now()}-${index}`;
-            return uploadToCloudinary(file.buffer, filename);
-          });
-
-          const uploadResults = await Promise.all(uploadPromises);
-          const newImageUrls = uploadResults.map((result) => result.secure_url);
-
-          updateData.images = [...(post.images || []), ...newImageUrls];
-        } catch (uploadError) {
-          return res.status(500).json({
-            message: "Error uploading images",
-            error: uploadError.message,
-          });
+        const post = await Post.findById(postId);
+        if (!post) {
+          return res.status(404).json({ message: "Post not found" });
         }
-      }
 
-      // Parse amenities if provided
-      if (updateData.amenities) {
-        try {
-          updateData.amenities =
-            typeof updateData.amenities === "string"
-              ? JSON.parse(updateData.amenities)
-              : updateData.amenities;
-        } catch (e) {
-          updateData.amenities = Array.isArray(updateData.amenities)
-            ? updateData.amenities
-            : [updateData.amenities];
+        // Check ownership
+        if (post.userId.toString() !== userId.toString()) {
+          return res
+            .status(403)
+            .json({ message: "Not authorized to update this post" });
         }
+
+        // Handle image uploads if provided
+        if (req.files && req.files.length > 0) {
+          try {
+            const uploadPromises = req.files.map((file, index) => {
+              const filename = `post-${userId}-${Date.now()}-${index}`;
+              return uploadToCloudinary(file.buffer, filename);
+            });
+
+            const uploadResults = await Promise.all(uploadPromises);
+            const newImageUrls = uploadResults.map(
+              (result) => result.secure_url
+            );
+
+            updateData.images = [...(post.images || []), ...newImageUrls];
+          } catch (uploadError) {
+            return res.status(500).json({
+              message: "Error uploading images",
+              error: uploadError.message,
+            });
+          }
+        }
+
+        // Parse amenities if provided
+        if (updateData.amenities) {
+          try {
+            updateData.amenities =
+              typeof updateData.amenities === "string"
+                ? JSON.parse(updateData.amenities)
+                : updateData.amenities;
+          } catch (e) {
+            updateData.amenities = Array.isArray(updateData.amenities)
+              ? updateData.amenities
+              : [updateData.amenities];
+          }
+        }
+
+        // Update address if provided
+        if (updateData.street || updateData.ward || updateData.district) {
+          updateData.address = {
+            ...post.address,
+            ...(updateData.street && { street: updateData.street }),
+            ...(updateData.ward && { ward: updateData.ward }),
+            ...(updateData.district && { district: updateData.district }),
+          };
+          delete updateData.street;
+          delete updateData.ward;
+          delete updateData.district;
+        }
+
+        const updatedPost = await Post.findByIdAndUpdate(postId, updateData, {
+          new: true,
+          runValidators: true,
+        }).populate("userId", "name profileImage");
+
+        res.status(200).json({
+          message: "Post updated successfully",
+          post: updatedPost,
+        });
+      } catch (error) {
+        res.status(500).json({
+          message: "Server error",
+          error: error.message,
+        });
       }
-
-      // Update address if provided
-      if (updateData.street || updateData.ward || updateData.district) {
-        updateData.address = {
-          ...post.address,
-          ...(updateData.street && { street: updateData.street }),
-          ...(updateData.ward && { ward: updateData.ward }),
-          ...(updateData.district && { district: updateData.district }),
-        };
-        delete updateData.street;
-        delete updateData.ward;
-        delete updateData.district;
-      }
-
-      const updatedPost = await Post.findByIdAndUpdate(postId, updateData, {
-        new: true,
-        runValidators: true,
-      }).populate("userId", "name profileImage");
-
-      res.status(200).json({
-        message: "Post updated successfully",
-        post: updatedPost,
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Server error",
-        error: error.message,
-      });
-    }
-  }],
+    },
+  ],
   deletePost: async (req, res) => {
     try {
       const { postId } = req.params;
@@ -1030,4 +1364,5 @@ module.exports = {
       });
     }
   },
+  searchPosts, // Add this line - this was missing!
 };

@@ -14,7 +14,6 @@ const AgreementConfirmationRouter = require("./src/routes/agreementConfirmationR
 const AdminRouter = require("./src/routes/adminRoute");
 const CotenantRouter = require("./src/routes/cotenantRouter");
 const withdrawalRoute = require("./src/routes/withdrawalRoute");
-const PostRouter = require("./src/routes/postRoute");
 const PaymentRouter = require("./src/routes/paymentRoute");
 const paymentRoutes = require("./src/routes/payment");
 const PostRouter = require("./src/routes/postRoute");
