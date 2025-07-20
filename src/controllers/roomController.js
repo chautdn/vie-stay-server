@@ -483,9 +483,10 @@ const getNewestRoom = catchAsync(async (req, res) => {
       .limit(10);
 
     if (!rooms || rooms.length === 0) {
-      return res.status(404).json({
-        status: "error",
+      return res.status(200).json({
+        status: "success",
         message: "No rooms found",
+        data: [],
       });
     }
 

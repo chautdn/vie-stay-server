@@ -16,6 +16,7 @@ const CotenantRouter = require("./src/routes/cotenantRouter");
 const withdrawalRoute = require("./src/routes/withdrawalRoute");
 const PostRouter = require("./src/routes/postRoute");
 const PaymentRouter = require("./src/routes/paymentRoute");
+const ReportRouter = require("./src/routes/reportRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -104,6 +105,7 @@ app.use("/api/withdrawals", withdrawalRoute); // Withdrawal routes
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
 app.use("/payment", PaymentRouter);
+app.use("/api/reports", ReportRouter); // Report routes
 app.use(handleError);
 
 connectDB();
