@@ -186,6 +186,7 @@ class PaymentService {
       const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
 
       if (secureHash !== signed) {
+        console.log("❌ Invalid signature");
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=97`,
@@ -198,6 +199,7 @@ class PaymentService {
       const payment = await Payment.findOne({ transactionId });
 
       if (!payment) {
+        console.log("❌ Payment not found for transactionId:", transactionId);
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=transaction_not_found`,
@@ -215,6 +217,9 @@ class PaymentService {
         const result = await this.createTenancyAgreementAfterPayment(
           payment._id
         );
+
+        console.log("✅ Tenancy agreement created and tenant added to room");
+        console.log("Room update result:", result.roomUpdate);
 
         return {
           success: true,

@@ -16,11 +16,14 @@ const CotenantRouter = require("./src/routes/cotenantRouter");
 const withdrawalRoute = require("./src/routes/withdrawalRoute");
 const PostRouter = require("./src/routes/postRoute");
 const PaymentRouter = require("./src/routes/paymentRoute");
+const paymentRoutes = require("./src/routes/payment");
+const PostRouter = require("./src/routes/postRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
 
 // ✅ THÊM: IMPORTANT - Handle PayOS webhook BEFORE general JSON parsing
+// IMPORTANT: Handle PayOS webhook BEFORE general JSON parsing
 // PayOS webhook needs raw body for signature verification
 app.use(
   "/api/payment/payos-webhook",
@@ -38,30 +41,30 @@ app.use(
         "'self'",
         "'unsafe-inline'",
         "https://sandbox.vnpayment.vn",
-        "https://dev.payos.vn", // ✅ THÊM: Added PayOS
-      ],
+        "https://dev.payos.vn",
+      ], // Added PayOS
       imgSrc: [
         "'self'",
         "data:",
         "https://sandbox.vnpayment.vn",
-        "https://dev.payos.vn", // ✅ THÊM: Added PayOS
-      ],
+        "https://dev.payos.vn",
+      ], // Added PayOS
       scriptSrc: [
         "'self'",
         "https://code.jquery.com",
         "https://sandbox.vnpayment.vn",
-        "https://dev.payos.vn", // ✅ THÊM: Added PayOS
+        "https://dev.payos.vn", // Added PayOS
       ],
       connectSrc: [
         "'self'",
         "https://sandbox.vnpayment.vn",
-        "https://dev.payos.vn", // ✅ THÊM: Added PayOS
-      ],
+        "https://dev.payos.vn",
+      ], // Added PayOS
       frameSrc: [
         "'self'",
         "https://sandbox.vnpayment.vn",
-        "https://dev.payos.vn", // ✅ THÊM: Added PayOS
-      ],
+        "https://dev.payos.vn",
+      ], // Added PayOS
     },
   })
 );
@@ -89,21 +92,30 @@ if (!fs.existsSync(uploadsDir)) {
 
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
+  // Only log cookies for non-webhook routes to avoid noise
+  if (!req.path.includes("webhook")) {
+    console.log("Cookies:", req.cookies);
+  }
   next();
 });
 
+// Mount routes
 app.use("/user", UserRouter);
 app.use("/rooms", RoomRouter);
 app.use("/api/posts", PostRouter);
 app.use("/tenants", TenantRouter);
 app.use("/api/accommodations", AccommodationRouter);
 app.use("/agreement-confirmations", AgreementConfirmationRouter);
-// Rental requests should be the last route to avoid conflicts with other routes
 app.use("/rental-requests", rentalRequestRouter);
 app.use("/api/withdrawals", withdrawalRoute); // Withdrawal routes
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
 app.use("/payment", PaymentRouter);
+
+// Payment routes - make sure this is only mounted once
+app.use("/api/payment", paymentRoutes);
+console.log("Payment routes mounted at /api/payment");
+
 app.use(handleError);
 
 connectDB();

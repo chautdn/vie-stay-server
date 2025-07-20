@@ -5,6 +5,7 @@ const authController = require('../controllers/authenticateController');
 
 const router = express.Router();
 
+// Authentication routes
 router.post('/signup', authController.signup);
 router.post('/login', authController.login);
 router.post('/google-login', authController.googleLogin);
@@ -15,6 +16,10 @@ router.post('/forgot-password', authController.forgotPassword);
 router.patch('/reset-password/:token', authController.resetPassword);
 router.get('/profile', authController.protect, userController.getUserProfile);
 
+
+router.patch('/:id/name', userController.updateUserName);
+router.patch('/:id/phone', userController.updateUserPhone);
+router.patch('/:id/avatar', userController.uploadUserPhoto, userController.updateUserAvatar);
 
 router.patch('/:id/name', userController.updateUserName);
 router.patch('/:id/phone', userController.updateUserPhone);

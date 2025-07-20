@@ -14,42 +14,36 @@ const router = express.Router();
 router.use(protect); // Apply authentication to all routes below
 
 // ✅ SPECIFIC ROUTES (must come before generic /:id route)
-router.get(
-  "/me",
-  restrictTo("landlord"),
+router.get("/me", 
+  restrictTo("landlord"), 
   accommodationController.getAccommodationByOwnerId
 );
 
 // ✅ CRUD ROUTES
-router.post(
-  "/",
-  restrictTo("landlord"),
+router.post("/", 
+  restrictTo("landlord"), 
   accommodationController.createAccommodation
 );
 
-router.get(
-  "/",
-  restrictTo("landlord", "admin"),
+router.get("/", 
+  restrictTo("landlord", "admin"), 
   accommodationController.getAccommodations
 );
 
 // ✅ SINGLE ACCOMMODATION ROUTES (must come after specific routes)
-router.get(
-  "/:id",
-  restrictTo("landlord", "admin"),
+router.get("/:id", 
+  restrictTo("landlord", "admin"), 
   accommodationController.getAccommodationById
 );
 
-router.put(
-  "/:id",
-  restrictTo("landlord"),
+router.put("/:id", 
+  restrictTo("landlord"), 
   accommodationController.updateAccommodation
 );
 
 // ✅ STATUS UPDATE (admin only)
-router.put(
-  "/:id/status",
-  restrictTo("admin"),
+router.put("/:id/status", 
+  restrictTo("admin"), 
   accommodationController.updateStatus
 );
 

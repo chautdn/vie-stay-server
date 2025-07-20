@@ -251,7 +251,7 @@ exports.getAccommodationByOwnerId = catchAsync(async (req, res) => {
 exports.getAccommodationById = async (req, res) => {
   try {
     const { id } = req.params;
-
+    
     console.log("🔍 GET /api/accommodations/:id");
     console.log("Accommodation ID:", id);
     console.log("User from token:", req.user);

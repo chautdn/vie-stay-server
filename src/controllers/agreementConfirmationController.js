@@ -245,24 +245,36 @@ exports.createDepositPayment = async (req, res) => {
       });
     }
 
-    // ✅ THÊM: Kiểm tra đã thanh toán chưa
-    if (confirmation.paymentStatus === "completed") {
-      console.log("❌ Payment already completed");
-      return res.status(400).json({
-        success: false,
-        message: "Payment has already been completed for this confirmation",
+    
+    if (paymentMethod === "vnpay") {
+      
+      const paymentService = require("../services/paymentService");
+
+      const vnpayPayment = await paymentService.createDepositPayment({
+        confirmationId,
+        tenantId,
+        paymentMethod,
+        amount: confirmation.agreementTerms?.deposit || 0,
+        ipAddr:
+          req.headers["x-forwarded-for"]?.split(",")[0] ||
+          req.connection.remoteAddress ||
+          "127.0.0.1",
+      });
+
+
+      return res.status(200).json({
+        success: true,
+        message: "VNPay payment URL created successfully",
+        data: vnpayPayment,
       });
     }
 
-    console.log("✅ All validations passed, creating payment...");
-
-    const paymentResult = await paymentService.createDepositPayment({
-      confirmationId,
-      tenantId,
+    
+    const paymentResult = {
       paymentMethod,
       amount: confirmation.agreementTerms.deposit,
       ipAddr: req.ip,
-    });
+    };
 
     console.log("✅ Payment result:", paymentResult);
 
@@ -272,10 +284,68 @@ exports.createDepositPayment = async (req, res) => {
       data: paymentResult,
     });
   } catch (error) {
-    console.error("❌ Error creating deposit payment:", error);
-    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create payment",
+    });
+  }
+};
 
-    res.status(400).json({
+exports.handlePaymentReturn = async (req, res) => {
+  try {
+    const vnp_Params = req.query;
+
+    if (!vnp_Params.vnp_TxnRef) {
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/payment/error?message=Missing transaction reference`
+      );
+    }
+
+    const result = await paymentService.handleVNPayReturn(vnp_Params);
+
+    if (result.success) {
+     
+      res.redirect(
+        `${process.env.FRONTEND_URL}/payment/success?transactionId=${result.payment.transactionId}`
+      );
+    } else {
+      res.redirect(
+        `${process.env.FRONTEND_URL}/payment/failure?transactionId=${result.payment.transactionId}&error=${result.payment.failureReason}`
+      );
+    }
+  } catch (error) {
+    console.error("Error handling payment return:", error);
+    res.redirect(
+      `${process.env.FRONTEND_URL}/payment/error?message=Payment processing failed`
+    );
+  }
+};
+
+// Lấy payment history của tenant
+exports.getTenantPayments = async (req, res) => {
+  try {
+    const tenantId = req.user.id;
+    const { status, paymentType, page = 1, limit = 10 } = req.query;
+
+    // Build filter
+    let filter = { tenantId };
+    if (status) filter.status = status;
+    if (paymentType) filter.paymentType = paymentType;
+
+    const payments = await paymentService.getPaymentsByTenant(
+      tenantId,
+      filter,
+      { page: parseInt(page), limit: parseInt(limit) }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Payments retrieved successfully",
+      data: payments,
+    });
+  } catch (error) {
+    console.error("Error getting tenant payments:", error);
+    res.status(500).json({
       success: false,
       message: error.message || "Failed to create deposit payment",
     });

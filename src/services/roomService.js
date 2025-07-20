@@ -307,11 +307,17 @@ const countRooms = async (filters) => {
     const query = {};
     let accommodationQuery = {};
 
+    // ✅ XÓA: Bỏ filter theo accommodationId
+    // if (filters.accommodationId) {
+    //   query.accommodationId = filters.accommodationId;
+    // }
+
+    // Room type filter
     if (filters.type) {
       query.type = filters.type;
     }
 
-    // ✅ SỬA: Price filter logic
+    // Price range filter
     if (filters.minRent || filters.maxRent) {
       query.baseRent = {};
       if (filters.minRent) query.baseRent.$gte = parseInt(filters.minRent);
@@ -325,6 +331,7 @@ const countRooms = async (filters) => {
       if (filters.maxSize) query.size.$lte = parseInt(filters.maxSize);
     }
 
+    // Features/amenities filter
     if (filters.features) {
       const featureMapping = {
         thang_may: "elevator",
@@ -351,6 +358,7 @@ const countRooms = async (filters) => {
       query.capacity = { $gte: parseInt(filters.capacity) };
     }
 
+    // Private bathroom filter
     if (filters.hasPrivateBathroom !== undefined) {
       query.hasPrivateBathroom = filters.hasPrivateBathroom === "true";
     }
@@ -363,6 +371,7 @@ const countRooms = async (filters) => {
       query.amenities = { $in: filters.amenities };
     }
 
+    // Availability filter
     if (filters.isAvailable !== undefined) {
       query.isAvailable =
         filters.isAvailable === true || filters.isAvailable === "true";
@@ -619,6 +628,129 @@ const searchRooms = async (filters, page = 1, limit = 10) => {
         .limit(limit);
     }
 
+    // Province/city filter (via accommodation)
+    if (filters.province) {
+      accommodationQuery["address.city"] = filters.province;
+    }
+
+    console.log("🎯 Room query:", query);
+    console.log("🏠 Accommodation query:", accommodationQuery);
+
+    let rooms;
+
+    // ✅ SỬA: Simplified query logic
+    if (Object.keys(accommodationQuery).length > 0) {
+      // Need aggregation for location filters
+      rooms = await Room.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: "accommodations",
+            localField: "accommodationId",
+            foreignField: "_id",
+            as: "accommodation",
+          },
+        },
+        {
+          $match: {
+            "accommodation.0": { $exists: true },
+          },
+        },
+        {
+          $match: Object.keys(accommodationQuery).reduce((acc, key) => {
+            acc[`accommodation.0.${key}`] = accommodationQuery[key];
+            return acc;
+          }, {}),
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "accommodation.ownerId",
+            foreignField: "_id",
+            as: "ownerInfo",
+          },
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "currentTenant",
+            foreignField: "_id",
+            as: "currentTenantInfo",
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            roomNumber: 1,
+            name: 1,
+            description: 1,
+            type: 1,
+            size: 1,
+            capacity: 1,
+            hasPrivateBathroom: 1,
+            // ✅ XÓA: Bỏ furnishingLevel
+            images: 1,
+            amenities: 1,
+            baseRent: 1,
+            deposit: 1,
+            utilityRates: 1,
+            additionalFees: 1,
+            isAvailable: 1,
+            availableFrom: 1,
+            averageRating: 1,
+            totalRatings: 1,
+            viewCount: 1,
+            favoriteCount: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            accommodationId: {
+              _id: { $arrayElemAt: ["$accommodation._id", 0] },
+              name: { $arrayElemAt: ["$accommodation.name", 0] },
+              description: { $arrayElemAt: ["$accommodation.description", 0] },
+              address: { $arrayElemAt: ["$accommodation.address", 0] },
+              images: { $arrayElemAt: ["$accommodation.images", 0] },
+              amenities: { $arrayElemAt: ["$accommodation.amenities", 0] },
+              ownerId: {
+                _id: { $arrayElemAt: ["$ownerInfo._id", 0] },
+                name: { $arrayElemAt: ["$ownerInfo.name", 0] },
+                email: { $arrayElemAt: ["$ownerInfo.email", 0] },
+                phoneNumber: { $arrayElemAt: ["$ownerInfo.phoneNumber", 0] },
+              },
+            },
+            currentTenant: {
+              $map: {
+                input: "$currentTenantInfo",
+                as: "tenant",
+                in: {
+                  _id: "$$tenant._id",
+                  name: "$$tenant.name",
+                  email: "$$tenant.email",
+                  phoneNumber: "$$tenant.phoneNumber",
+                },
+              },
+            },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+      ]);
+    } else {
+      // Simple query without location filters
+      rooms = await Room.find(query)
+        .populate({
+          path: "accommodationId",
+          populate: {
+            path: "ownerId",
+            select: "name email phoneNumber",
+          },
+        })
+        .populate({
+          path: "currentTenant",
+          select: "name email phoneNumber",
+        })
+        .sort({ createdAt: -1 });
+    }
+
+    console.log(`✅ Found ${rooms.length} rooms matching criteria`);
     return rooms;
   } catch (error) {
     console.error("❌ Search rooms error:", error);
