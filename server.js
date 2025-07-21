@@ -98,7 +98,7 @@ app.use((req, res, next) => {
 
 // Mount routes
 app.use("/user", UserRouter);
-app.use("/user", TransactionRouter);
+app.use("/api/transactions", TransactionRouter);
 app.use("/rooms", RoomRouter);
 app.use("/api/posts", PostRouter);
 app.use("/tenants", TenantRouter);

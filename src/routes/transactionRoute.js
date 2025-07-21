@@ -4,8 +4,8 @@ const router = express.Router();
 const Transaction = require("../models/Transaction");
 const { protect } = require("../controllers/authenticateController");
 
-// GET /user/transactions - Get user's transaction history
-router.get("/transactions", protect, async (req, res) => {
+// GET / - Get user's transaction history (note: no /transactions prefix)
+router.get("/", protect, async (req, res) => {
   try {
     const {
       page = 1,
@@ -118,8 +118,8 @@ router.get("/transactions", protect, async (req, res) => {
   }
 });
 
-// GET /user/transactions/summary - Get transaction summary
-router.get("/transactions/summary", protect, async (req, res) => {
+// GET /summary - Get transaction summary
+router.get("/summary", protect, async (req, res) => {
   try {
     const userId = req.user._id;
     const { timeframe = "all" } = req.query; // all, today, week, month, year
@@ -209,8 +209,8 @@ router.get("/transactions/summary", protect, async (req, res) => {
   }
 });
 
-// GET /user/transactions/:id - Get specific transaction details
-router.get("/transactions/:id", protect, async (req, res) => {
+// GET /:id - Get specific transaction details
+router.get("/:id", protect, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
