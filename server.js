@@ -21,10 +21,6 @@ const ReportRouter = require("./src/routes/reportRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
-
-// ✅ THÊM: IMPORTANT - Handle PayOS webhook BEFORE general JSON parsing
-// IMPORTANT: Handle PayOS webhook BEFORE general JSON parsing
-// PayOS webhook needs raw body for signature verification
 app.use(
   "/api/payment/payos-webhook",
   express.raw({ type: "application/json" })
