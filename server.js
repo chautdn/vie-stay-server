@@ -18,6 +18,7 @@ const PaymentRouter = require("./src/routes/paymentRoute");
 const paymentRoutes = require("./src/routes/payment");
 const PostRouter = require("./src/routes/postRoute");
 const ReportRouter = require("./src/routes/reportRoute");
+const TransactionRouter = require("./src/routes/transactionRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -97,6 +98,7 @@ app.use((req, res, next) => {
 
 // Mount routes
 app.use("/user", UserRouter);
+app.use("/user", TransactionRouter);
 app.use("/rooms", RoomRouter);
 app.use("/api/posts", PostRouter);
 app.use("/tenants", TenantRouter);
