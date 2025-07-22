@@ -55,6 +55,21 @@ const userSchema = new mongoose.Schema(
       maxlength: [20, "National ID cannot exceed 20 characters"],
       sparse: true,
     },
+    nationalIdFrontImage: {
+      type: String, // Cloudinary URL mặt trước
+    },
+    nationalIdBackImage: {
+      type: String, // Cloudinary URL mặt sau
+    },
+    nationalIdVerified: {
+      type: Boolean,
+      default: false,
+    },
+    nationalIdData: {
+      front: { type: Object }, // Dữ liệu OCR mặt trước
+      back: { type: Object }, // Dữ liệu OCR mặt sau
+      verifiedAt: { type: Date },
+    },
     nationalIdImage: {
       type: String,
     },

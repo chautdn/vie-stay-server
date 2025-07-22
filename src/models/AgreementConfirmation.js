@@ -42,6 +42,14 @@ const agreementConfirmationSchema = new mongoose.Schema(
     confirmedAt: Date,
     rejectedAt: Date,
     rejectionReason: String,
+    signatureStatus: {
+      type: String,
+      enum: ["pending", "completed", "failed"],
+      default: "pending",
+    },
+    documentId: { type: String },
+    signedContractPath: { type: String },
+    signedAt: { type: Date },
     expiresAt: {
       type: Date,
       default: () => new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 hours

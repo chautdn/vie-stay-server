@@ -15,6 +15,119 @@ class EmailService {
     });
   }
 
+  // Template cho email yêu cầu ký hợp đồng
+  generateContractSigningTemplate(data) {
+    const {
+      tenantName,
+      landlordName,
+      roomName,
+      accommodationName,
+      amount,
+      transactionId,
+      signingUrl,
+      startDate,
+      monthlyRent,
+    } = data;
+
+    return `
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ký hợp đồng thuê nhà</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      background: linear-gradient(to right, #4CAF50, #45a049);
+      padding: 20px;
+      text-align: center;
+      color: white;
+      border-radius: 5px 5px 0 0;
+    }
+    .content {
+      background-color: #f9f9f9;
+      padding: 20px;
+      border-radius: 0 0 5px 5px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+    .button {
+      display: inline-block;
+      background-color: #4CAF50;
+      color: white;
+      padding: 15px 30px;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: bold;
+      margin: 20px 0;
+      font-size: 16px;
+    }
+    .details {
+      background: white;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+      border-left: 4px solid #4CAF50;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #888;
+      font-size: 0.8em;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📝 Vui lòng ký hợp đồng thuê nhà</h1>
+  </div>
+  
+  <div class="content">
+    <p>Xin chào <strong>${tenantName}</strong>,</p>
+    
+    <p>Thanh toán tiền cọc của bạn đã được xác nhận. Vui lòng hoàn tất quá trình bằng cách ký hợp đồng thuê nhà qua liên kết dưới đây.</p>
+    
+    <div class="details">
+      <h4>📋 Thông tin hợp đồng:</h4>
+      <ul>
+        <li><strong>Phòng:</strong> ${roomName}</li>
+        <li><strong>Tòa nhà:</strong> ${accommodationName}</li>
+        <li><strong>Ngày bắt đầu thuê:</strong> ${new Date(startDate).toLocaleDateString("vi-VN")}</li>
+        <li><strong>Giá thuê cơ bản:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(monthlyRent)}/tháng</li>
+        <li><strong>Tiền cọc:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount)}</li>
+        <li><strong>Mã giao dịch:</strong> ${transactionId}</li>
+      </ul>
+    </div>
+    
+    <div style="text-align: center;">
+      <a href="${signingUrl}" class="button">
+        ✅ Ký hợp đồng ngay
+      </a>
+    </div>
+    
+    <p><strong>Lưu ý:</strong> Vui lòng ký hợp đồng trong vòng 48 giờ để hoàn tất quy trình thuê nhà.</p>
+    
+    <p>Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi qua email hoặc hotline.</p>
+    
+    <p>Trân trọng,<br><strong>Đội ngũ Vie Stay</strong></p>
+  </div>
+  
+  <div class="footer">
+    <p>Đây là email tự động, vui lòng không trả lời email này.</p>
+    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+
   // Template cho email xác nhận hợp đồng
   generateAgreementConfirmationTemplate(data) {
     const {
@@ -379,6 +492,172 @@ class EmailService {
     `;
   }
 
+  // ✅ THÊM template cho email hoàn thành hợp đồng
+  generateContractCompletedTemplate(data) {
+    const {
+      tenantName,
+      landlordName,
+      roomName,
+      accommodationName,
+      startDate,
+      endDate,
+      monthlyRent,
+      deposit,
+      tenantContact, // ✅ THÊM
+      landlordContact, // ✅ THÊM
+    } = data;
+
+    return `
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hợp đồng đã hoàn thành</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      background: linear-gradient(to right, #28a745, #20c997);
+      padding: 20px;
+      text-align: center;
+      color: white;
+      border-radius: 5px 5px 0 0;
+    }
+    .content {
+      background-color: #f9f9f9;
+      padding: 20px;
+      border-radius: 0 0 5px 5px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+    .success-box {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 15px 0;
+      text-align: center;
+    }
+    .details {
+      background: white;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+      border-left: 4px solid #28a745;
+    }
+    .contact-box {
+      background: #e8f4fd;
+      border: 1px solid #bee5eb;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #888;
+      font-size: 0.8em;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎉 Hợp đồng thuê nhà đã hoàn thành!</h1>
+  </div>
+  
+  <div class="content">
+    <div class="success-box">
+      <h3>✅ Hợp đồng đã được ký thành công!</h3>
+      <p>Cả hai bên đã hoàn tất việc ký hợp đồng thuê nhà.</p>
+    </div>
+    
+    <div class="details">
+      <h4>👥 Thông tin các bên:</h4>
+      <ul>
+        <li><strong>Người thuê:</strong> ${tenantName}</li>
+        <li><strong>Chủ nhà:</strong> ${landlordName}</li>
+      </ul>
+    </div>
+
+    <div class="details">
+      <h4>🏠 Thông tin hợp đồng:</h4>
+      <ul>
+        <li><strong>Phòng:</strong> ${roomName}</li>
+        <li><strong>Tòa nhà:</strong> ${accommodationName}</li>
+        <li><strong>Thời gian thuê:</strong> ${new Date(startDate).toLocaleDateString("vi-VN")} - ${new Date(endDate).toLocaleDateString("vi-VN")}</li>
+        <li><strong>Giá thuê:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(monthlyRent)}/tháng</li>
+        <li><strong>Tiền cọc:</strong> ${new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(deposit)}</li>
+      </ul>
+    </div>
+
+    <!-- ✅ THÊM phần thông tin liên hệ -->
+    <div class="contact-box">
+      <h4>📞 Thông tin liên hệ:</h4>
+      <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+        <div style="flex: 1; margin-right: 10px;">
+          <h5>👤 Người thuê: ${tenantName}</h5>
+          <ul style="list-style: none; padding: 0;">
+            <li>📧 ${tenantContact?.email || "N/A"}</li>
+            ${tenantContact?.phone ? `<li>📱 ${tenantContact.phone}</li>` : ""}
+          </ul>
+        </div>
+        <div style="flex: 1; margin-left: 10px;">
+          <h5>🏠 Chủ nhà: ${landlordName}</h5>
+          <ul style="list-style: none; padding: 0;">
+            <li>📧 ${landlordContact?.email || "N/A"}</li>
+            ${landlordContact?.phone ? `<li>📱 ${landlordContact.phone}</li>` : ""}
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="success-box">
+      <h4>📋 Các bước tiếp theo:</h4>
+      <p><strong>Dành cho người thuê:</strong></p>
+      <ul style="text-align: left;">
+        <li>Liên hệ chủ nhà để sắp xếp thời gian nhận phòng</li>
+        <li>Chuẩn bị các giấy tờ cần thiết (CMND/CCCD)</li>
+        <li>Thanh toán tiền thuê tháng đầu theo thỏa thuận</li>
+      </ul>
+      
+      <p><strong>Dành cho chủ nhà:</strong></p>
+      <ul style="text-align: left;">
+        <li>Chuẩn bị phòng và trao chìa khóa</li>
+        <li>Hướng dẫn người thuê các quy định của tòa nhà</li>
+        <li>Trao đổi thông tin liên lạc trực tiếp</li>
+      </ul>
+    </div>
+
+    <p><strong>Lưu ý quan trọng:</strong></p>
+    <ul>
+      <li>Hợp đồng có hiệu lực từ ngày ${new Date(startDate).toLocaleDateString("vi-VN")}</li>
+      <li>Bản hợp đồng đã ký sẽ được lưu trữ an toàn trong hệ thống</li>
+      <li>Cả hai bên có thể tải xuống bản hợp đồng từ tài khoản cá nhân</li>
+      <li><strong>Liên hệ trực tiếp:</strong> Hai bên có thể liên hệ qua thông tin email/số điện thoại ở trên</li>
+    </ul>
+    
+    <p>Cảm ơn cả hai bên đã tin tưởng và sử dụng dịch vụ Vie Stay!</p>
+    
+    <p>Trân trọng,<br><strong>Đội ngũ Vie Stay</strong></p>
+  </div>
+  
+  <div class="footer">
+    <p>Đây là email tự động, vui lòng không trả lời email này.</p>
+    <p>Nếu cần hỗ trợ, vui lòng liên hệ: support@viestay.com</p>
+    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+  </div>
+</body>
+</html>
+  `;
+  }
+
   // Gửi email xác nhận hợp đồng
   async sendAgreementConfirmationEmail(tenantEmail, agreementData) {
     try {
@@ -465,6 +744,45 @@ class EmailService {
       return await this.transporter.sendMail(mailOptions);
     } catch (error) {
       console.error("Error sending password reset email:", error);
+      throw error;
+    }
+  }
+
+  // Sửa phương thức sendEmail để hỗ trợ template mới
+  async sendEmail({ to, subject, template, context, cc }) {
+    try {
+      let htmlContent;
+      switch (template) {
+        case "paymentSuccess":
+          htmlContent = this.generatePaymentSuccessTemplate(context);
+          break;
+        case "contractSigning":
+          htmlContent = this.generateContractSigningTemplate(context);
+          break;
+        case "agreementConfirmation":
+          htmlContent = this.generateAgreementConfirmationTemplate(context);
+          break;
+        case "contractCompleted": // ✅ THÊM case mới
+          htmlContent = this.generateContractCompletedTemplate(context);
+          break;
+        default:
+          throw new Error("Invalid email template");
+      }
+
+      const mailOptions = {
+        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
+        to,
+        cc: cc || [], // ✅ Hỗ trợ CC
+        subject,
+        html: htmlContent,
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log(`Email sent successfully: ${result.messageId}`);
+      console.log(`Recipients: TO=${to}, CC=${cc ? cc.join(", ") : "none"}`);
+      return result;
+    } catch (error) {
+      console.error("Error sending email:", error);
       throw error;
     }
   }

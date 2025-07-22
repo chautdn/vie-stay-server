@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const agreementConfirmationController = require("../controllers/agreementConfirmationController");
+const paymentService = require("../services/paymentService");
 const {
   protect,
   restrictTo,
@@ -12,7 +13,7 @@ const {
 
 // ✅ VNPay payment return (webhook) - PUBLIC ROUTE
 router.get(
-  "/payment/vnpay/return", // ✅ Đảm bảo path này đúng
+  "/payment/vnpay/return",
   agreementConfirmationController.handlePaymentReturn
 );
 
@@ -22,13 +23,34 @@ router.get(
   agreementConfirmationController.getConfirmationByToken
 );
 
+// ✅ Thêm route xử lý callback từ BoldSign (webhook)
+router.post("/signature/callback", async (req, res) => {
+  try {
+    const result = await paymentService.handleSignatureCallback(req.body);
+    res.status(200).json({
+      success: true,
+      message: "Signature callback processed successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error processing signature callback:", error);
+    res.status(400).json({
+      success: false,
+      message: error.message || "Failed to process signature callback",
+    });
+  }
+});
+
 // ✅ Apply protection từ đây trở xuống
 router.use(protect);
 
 // ================================
 // TENANT CONFIRMATION ACTIONS
 // ================================
-
+router.post(
+  "/:confirmationId/test-completed-email",
+  agreementConfirmationController.testContractCompletedEmail
+);
 // ✅ Xác nhận đồng ý hợp đồng (tenant)
 router.post(
   "/confirm/:token",

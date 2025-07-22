@@ -1,5 +1,6 @@
 const agreementConfirmationService = require("../services/agreementConfirmationService");
 const paymentService = require("../services/paymentService");
+const AgreementConfirmation = require("../models/AgreementConfirmation"); // ✅ THÊM import này
 
 // ================================
 // PUBLIC CONTROLLERS (không cần login)
@@ -9,7 +10,6 @@ const paymentService = require("../services/paymentService");
 exports.getConfirmationByToken = async (req, res) => {
   try {
     const { token } = req.params;
-    console.log("🔍 Getting confirmation by token:", token);
 
     const confirmation =
       await agreementConfirmationService.getConfirmationByToken(token);
@@ -28,70 +28,114 @@ exports.getConfirmationByToken = async (req, res) => {
   }
 };
 
-// ✅ VNPay payment return (webhook) - SỬA HOÀN TOÀN
+// ✅ Test email function (SỬA)
+exports.testContractCompletedEmail = async (req, res) => {
+  try {
+    const { confirmationId } = req.params;
+
+    const confirmation = await AgreementConfirmation.findById(
+      confirmationId
+    ).populate([
+      { path: "tenantId", select: "name email phoneNumber" },
+      { path: "landlordId", select: "name email phoneNumber" },
+      { path: "roomId", select: "roomNumber" },
+      {
+        path: "roomId",
+        populate: { path: "accommodationId", select: "name" },
+      },
+    ]);
+
+    if (!confirmation) {
+      return res.status(404).json({
+        status: "error",
+        message: "Confirmation not found",
+      });
+    }
+
+    const emailService = require("../services/emailService");
+
+    const emailData = {
+      to: confirmation.tenantId.email,
+      cc: [confirmation.landlordId.email],
+      subject: "🎉 Hợp đồng thuê nhà đã hoàn thành",
+      template: "contractCompleted",
+      context: {
+        tenantName: confirmation.tenantId.name,
+        landlordName: confirmation.landlordId.name,
+        roomName: confirmation.roomId.roomNumber,
+        accommodationName: confirmation.roomId.accommodationId?.name || "N/A",
+        startDate: confirmation.agreementTerms.startDate,
+        endDate: confirmation.agreementTerms.endDate,
+        monthlyRent: confirmation.agreementTerms.monthlyRent,
+        deposit: confirmation.agreementTerms.deposit,
+        tenantContact: {
+          email: confirmation.tenantId.email,
+          phone: confirmation.tenantId.phoneNumber,
+        },
+        landlordContact: {
+          email: confirmation.landlordId.email,
+          phone: confirmation.landlordId.phoneNumber,
+        },
+      },
+    };
+
+    console.log("📧 Testing email send to:", {
+      to: emailData.to,
+      cc: emailData.cc,
+      subject: emailData.subject,
+    });
+
+    await emailService.sendEmail(emailData);
+
+    res.status(200).json({
+      status: "success",
+      message: "Test email sent successfully",
+      data: {
+        sentTo: emailData.to,
+        ccTo: emailData.cc,
+        subject: emailData.subject,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error sending test email:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to send test email: " + error.message,
+    });
+  }
+};
+
+// ✅ VNPay payment return (webhook)
 exports.handlePaymentReturn = async (req, res) => {
   try {
-    console.log("💰 === VNPAY RETURN RECEIVED ===");
-    console.log("💰 Query params:", req.query);
-    console.log("💰 Method:", req.method);
-    console.log("💰 URL:", req.url);
-
-    // Extract key params
-    const {
-      vnp_TxnRef,
-      vnp_ResponseCode,
-      vnp_TransactionStatus,
-      vnp_Amount,
-      vnp_BankCode,
-      vnp_PayDate,
-      vnp_SecureHash,
-    } = req.query;
-
-    console.log("🔍 Key params:");
-    console.log("- Transaction Ref:", vnp_TxnRef);
-    console.log("- Response Code:", vnp_ResponseCode);
-    console.log("- Transaction Status:", vnp_TransactionStatus);
-    console.log("- Amount:", vnp_Amount);
+    const { vnp_TxnRef, vnp_ResponseCode, vnp_TransactionStatus, vnp_Amount } =
+      req.query;
 
     if (!vnp_TxnRef) {
-      console.error("❌ Missing vnp_TxnRef");
       return res.redirect(
         `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failed?error=missing_txn_ref`
       );
     }
 
-    // Process payment return
     const result = await paymentService.handleVNPayReturn(req.query);
-    console.log("💰 Payment processing result:", result);
 
     if (result.success) {
-      console.log("✅ Payment successful, updating confirmation...");
-
-      // Update confirmation payment status
       if (result.payment && result.payment.agreementConfirmationId) {
         try {
-          console.log("📝 Updating confirmation payment status...");
-
-          const AgreementConfirmation = require("../models/AgreementConfirmation");
-          const updatedConfirmation =
-            await AgreementConfirmation.findByIdAndUpdate(
-              result.payment.agreementConfirmationId,
-              {
-                paymentStatus: "completed",
-                paidAt: new Date(),
-                paymentId: result.payment._id,
-              },
-              { new: true }
-            );
-
-          console.log("✅ Confirmation payment status updated successfully");
-          console.log("Updated confirmation:", updatedConfirmation?._id);
+          await AgreementConfirmation.findByIdAndUpdate(
+            result.payment.agreementConfirmationId,
+            {
+              paymentStatus: "completed",
+              paidAt: new Date(),
+              paymentId: result.payment._id,
+            },
+            { new: true }
+          );
         } catch (updateError) {
           console.error("❌ Failed to update confirmation:", updateError);
         }
       }
 
-      // Redirect to success page with params
       const params = new URLSearchParams({
         transactionId: result.payment.transactionId,
         amount: result.payment.amount,
@@ -100,22 +144,15 @@ exports.handlePaymentReturn = async (req, res) => {
       });
 
       const redirectUrl = `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?${params.toString()}`;
-      console.log("🔗 Redirecting to:", redirectUrl);
-
       res.redirect(redirectUrl);
     } else {
-      console.log("❌ Payment failed:", result.error);
-
       const errorParam = encodeURIComponent(result.error || "payment_failed");
       res.redirect(
         `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failed?error=${errorParam}`
       );
     }
   } catch (error) {
-    console.error("❌ === PAYMENT RETURN ERROR ===");
-    console.error("Error:", error);
-    console.error("Stack:", error.stack);
-
+    console.error("❌ === PAYMENT RETURN ERROR ===", error);
     res.redirect(
       `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failed?error=server_error`
     );
@@ -131,8 +168,6 @@ exports.confirmAgreement = async (req, res) => {
   try {
     const { token } = req.params;
     const tenantId = req.user._id;
-
-    console.log("✅ Tenant confirming agreement:", tenantId);
 
     const confirmation = await agreementConfirmationService.confirmAgreement(
       token,
@@ -168,8 +203,6 @@ exports.rejectAgreement = async (req, res) => {
       });
     }
 
-    console.log("❌ Tenant rejecting agreement:", tenantId);
-
     const confirmation = await agreementConfirmationService.rejectAgreement(
       token,
       tenantId,
@@ -194,43 +227,24 @@ exports.rejectAgreement = async (req, res) => {
 // TENANT PAYMENT ACTIONS
 // ================================
 
-// ✅ SỬA: Tạo thanh toán tiền cọc (tenant only)
+// ✅ Tạo thanh toán tiền cọc (tenant only)
 exports.createDepositPayment = async (req, res) => {
   try {
     const { confirmationId } = req.params;
     const { paymentMethod = "vnpay" } = req.body;
     const tenantId = req.user._id;
 
-    console.log("💳 === PAYMENT REQUEST DEBUG ===");
-    console.log("confirmationId:", confirmationId);
-    console.log("paymentMethod:", paymentMethod);
-    console.log("tenantId:", tenantId);
-    console.log("req.user:", req.user);
-    console.log("req.body:", req.body);
-
-    // Kiểm tra confirmation thuộc về tenant này và đã confirmed
     const confirmation =
       await agreementConfirmationService.getConfirmationById(confirmationId);
 
-    console.log("📄 Found confirmation:", confirmation);
-
     if (!confirmation) {
-      console.log("❌ Confirmation not found");
       return res.status(404).json({
         success: false,
         message: "Confirmation not found",
       });
     }
 
-    console.log("🔍 Confirmation details:");
-    console.log("- Confirmation ID:", confirmation._id);
-    console.log("- Tenant ID from confirmation:", confirmation.tenantId._id);
-    console.log("- Current user ID:", tenantId);
-    console.log("- Status:", confirmation.status);
-    console.log("- Payment Status:", confirmation.paymentStatus);
-
     if (confirmation.tenantId._id.toString() !== tenantId.toString()) {
-      console.log("❌ Tenant ID mismatch");
       return res.status(403).json({
         success: false,
         message: "You can only create payments for your own confirmations",
@@ -238,23 +252,18 @@ exports.createDepositPayment = async (req, res) => {
     }
 
     if (confirmation.status !== "confirmed") {
-      console.log("❌ Agreement not confirmed, status:", confirmation.status);
       return res.status(400).json({
         success: false,
         message: "You must confirm the agreement before making payment",
       });
     }
 
-    // ✅ THÊM: Kiểm tra đã thanh toán chưa
     if (confirmation.paymentStatus === "completed") {
-      console.log("❌ Payment already completed");
       return res.status(400).json({
         success: false,
         message: "Payment has already been completed for this confirmation",
       });
     }
-
-    console.log("✅ All validations passed, creating payment...");
 
     const paymentResult = await paymentService.createDepositPayment({
       confirmationId,
@@ -264,8 +273,6 @@ exports.createDepositPayment = async (req, res) => {
       ipAddr: req.ip,
     });
 
-    console.log("✅ Payment result:", paymentResult);
-
     res.status(201).json({
       success: true,
       message: "Deposit payment created successfully",
@@ -273,8 +280,6 @@ exports.createDepositPayment = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error creating deposit payment:", error);
-    console.error("Error stack:", error.stack);
-
     res.status(400).json({
       success: false,
       message: error.message || "Failed to create deposit payment",
@@ -371,7 +376,6 @@ exports.getConfirmationById = async (req, res) => {
       });
     }
 
-    // Kiểm tra quyền xem
     const userId = req.user._id;
     const isTenant = confirmation.tenantId._id.toString() === userId.toString();
     const isLandlord =

@@ -16,6 +16,7 @@ const CotenantRouter = require("./src/routes/cotenantRouter");
 const withdrawalRoute = require("./src/routes/withdrawalRoute");
 const PostRouter = require("./src/routes/postRoute");
 const PaymentRouter = require("./src/routes/paymentRoute");
+const paymentService = require("./src/services/paymentService");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -91,6 +92,15 @@ app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
   next();
 });
+// Test BoldSign connection
+app.get("/test-boldsign", async (req, res) => {
+  try {
+    const result = await paymentService.testBoldSignConnection();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.use("/user", UserRouter);
 app.use("/rooms", RoomRouter);
@@ -104,6 +114,7 @@ app.use("/api/withdrawals", withdrawalRoute); // Withdrawal routes
 app.use("/cotenant", CotenantRouter);
 app.use("/admin", AdminRouter);
 app.use("/payment", PaymentRouter);
+
 app.use(handleError);
 
 connectDB();
