@@ -1,7 +1,6 @@
 const nodemailer = require("nodemailer");
 const {
-  VERIFICATION_EMAIL_TEMPLATE,
-  PASSWORD_RESET_REQUEST_TEMPLATE,
+  REPORT_RESPONSE_TEMPLATE,
 } = require("../templates/emailTemplates");
 
 class EmailService {
@@ -121,7 +120,7 @@ class EmailService {
   
   <div class="footer">
     <p>Đây là email tự động, vui lòng không trả lời email này.</p>
-    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+    <p>© ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
   </div>
 </body>
 </html>
@@ -346,7 +345,7 @@ class EmailService {
   
   <div class="footer">
     <p>Đây là email tự động, vui lòng không trả lời email này.</p>
-    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+    <p>© ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
   </div>
 </body>
 </html>
@@ -485,14 +484,14 @@ class EmailService {
   <div class="footer">
     <p>Đây là email tự động, vui lòng không trả lời email này.</p>
     <p>Nếu cần hỗ trợ, vui lòng liên hệ: support@viestay.com</p>
-    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+    <p>© ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
   </div>
 </body>
 </html>
     `;
   }
 
-  // ✅ THÊM template cho email hoàn thành hợp đồng
+  // Template cho email hoàn thành hợp đồng
   generateContractCompletedTemplate(data) {
     const {
       tenantName,
@@ -503,8 +502,8 @@ class EmailService {
       endDate,
       monthlyRent,
       deposit,
-      tenantContact, // ✅ THÊM
-      landlordContact, // ✅ THÊM
+      tenantContact,
+      landlordContact,
     } = data;
 
     return `
@@ -597,7 +596,6 @@ class EmailService {
       </ul>
     </div>
 
-    <!-- ✅ THÊM phần thông tin liên hệ -->
     <div class="contact-box">
       <h4>📞 Thông tin liên hệ:</h4>
       <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
@@ -651,104 +649,103 @@ class EmailService {
   <div class="footer">
     <p>Đây là email tự động, vui lòng không trả lời email này.</p>
     <p>Nếu cần hỗ trợ, vui lòng liên hệ: support@viestay.com</p>
-    <p>&copy; ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
+    <p>© ${new Date().getFullYear()} Vie Stay. Tất cả quyền được bảo lưu.</p>
   </div>
 </body>
 </html>
-  `;
+    `;
   }
 
   // Gửi email xác nhận hợp đồng
   async sendAgreementConfirmationEmail(tenantEmail, agreementData) {
     try {
-      const htmlContent =
-        this.generateAgreementConfirmationTemplate(agreementData);
-
       const mailOptions = {
-        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
+        from: `"Vie Stay" <${process.env.AUTH_EMAIL}>`,
         to: tenantEmail,
-        subject: "🎉 Yêu cầu thuê nhà được chấp nhận - Xác nhận hợp đồng",
-        html: htmlContent,
+        subject: "Xác nhận hợp đồng thuê nhà",
+        html: this.generateAgreementConfirmationTemplate(agreementData),
       };
 
       const result = await this.transporter.sendMail(mailOptions);
-      console.log(
-        "Agreement confirmation email sent successfully:",
-        result.messageId
-      );
-      return result;
+      console.log(`✅ Agreement confirmation email sent successfully to: ${tenantEmail}`);
+      return { success: true, messageId: result.messageId };
     } catch (error) {
-      console.error("Error sending agreement confirmation email:", error);
+      console.error(`❌ Error sending agreement confirmation email: ${error}`);
       throw error;
     }
   }
 
-  // Gửi email thông báo thanh toán thành công
-  async sendPaymentSuccessEmail(tenantEmail, paymentData) {
+  // Gửi email phản hồi báo cáo
+  async sendReportResponseEmail(reportData) {
     try {
-      const htmlContent = this.generatePaymentSuccessTemplate(paymentData);
+      const {
+        userEmail,
+        userFullname,
+        reportId,
+        reportType,
+        reportMessage,
+        reportDate,
+        postTitle,
+        postUrl,
+        status,
+        adminNote
+      } = reportData;
+
+      if (!userEmail) {
+        console.log('ℹ️ No email provided, skipping email notification');
+        return { success: false, message: 'No email provided' };
+      }
+
+      const emailTemplate = REPORT_RESPONSE_TEMPLATE
+        .replace('{{userFullname}}', userFullname)
+        .replace('{{reportId}}', reportId)
+        .replace('{{reportType}}', this.getReportTypeText(reportType))
+        .replace('{{reportMessage}}', reportMessage || 'Không có')
+        .replace('{{reportDate}}', new Date(reportDate).toLocaleDateString('vi-VN'))
+        .replace('{{postTitle}}', postTitle)
+        .replace('{{postUrl}}', postUrl)
+        .replace('{{status}}', this.getStatusText(status))
+        .replace('{{adminNote}}', adminNote || 'Không có ghi chú thêm');
 
       const mailOptions = {
-        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
-        to: tenantEmail,
-        subject: "💰 Thanh toán thành công - Hợp đồng đã kích hoạt",
-        html: htmlContent,
+        from: process.env.AUTH_EMAIL,
+        to: userEmail,
+        subject: `[VieStay] Phản hồi báo cáo #${reportId}`,
+        html: emailTemplate,
       };
 
       const result = await this.transporter.sendMail(mailOptions);
-      console.log("Payment success email sent successfully:", result.messageId);
-      return result;
+      console.log('✅ Report response email sent successfully to:', userEmail);
+      return { success: true, messageId: result.messageId };
     } catch (error) {
-      console.error("Error sending payment success email:", error);
+      console.error('❌ Error sending report response email:', error);
       throw error;
     }
   }
 
-  // Sử dụng lại template có sẵn cho verification
-  async sendVerificationEmail(email, verificationCode) {
-    try {
-      const htmlContent = VERIFICATION_EMAIL_TEMPLATE.replace(
-        "{verificationCode}",
-        verificationCode
-      );
-
-      const mailOptions = {
-        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Xác thực tài khoản Vie Stay",
-        html: htmlContent,
-      };
-
-      return await this.transporter.sendMail(mailOptions);
-    } catch (error) {
-      console.error("Error sending verification email:", error);
-      throw error;
-    }
+  // Hàm hỗ trợ cho báo cáo
+  getReportTypeText(type) {
+    const types = {
+      'scam': 'Lừa đảo',
+      'duplicate': 'Tin trùng lặp', 
+      'cant_contact': 'Không liên lạc được',
+      'fake': 'Tin giả',
+      'other': 'Khác'
+    };
+    return types[type] || type;
   }
 
-  // Sử dụng lại template có sẵn cho password reset
-  async sendPasswordResetEmail(email, resetURL, userName) {
-    try {
-      const htmlContent = PASSWORD_RESET_REQUEST_TEMPLATE.replace(
-        "{userName}",
-        userName
-      ).replace("{resetURL}", resetURL);
-
-      const mailOptions = {
-        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Đặt lại mật khẩu Vie Stay",
-        html: htmlContent,
-      };
-
-      return await this.transporter.sendMail(mailOptions);
-    } catch (error) {
-      console.error("Error sending password reset email:", error);
-      throw error;
-    }
+  getStatusText(status) {
+    const statuses = {
+      'resolved': 'Đã xử lý',
+      'rejected': 'Từ chối',
+      'pending': 'Đang chờ',
+      'reviewing': 'Đang xem xét'
+    };
+    return statuses[status] || status;
   }
 
-  // Sửa phương thức sendEmail để hỗ trợ template mới
+  // Phương thức gửi email tổng quát
   async sendEmail({ to, subject, template, context, cc }) {
     try {
       let htmlContent;
@@ -762,17 +759,29 @@ class EmailService {
         case "agreementConfirmation":
           htmlContent = this.generateAgreementConfirmationTemplate(context);
           break;
-        case "contractCompleted": // ✅ THÊM case mới
+        case "contractCompleted":
           htmlContent = this.generateContractCompletedTemplate(context);
+          break;
+        case "reportResponse":
+          htmlContent = REPORT_RESPONSE_TEMPLATE
+            .replace('{{userFullname}}', context.userFullname)
+            .replace('{{reportId}}', context.reportId)
+            .replace('{{reportType}}', this.getReportTypeText(context.reportType))
+            .replace('{{reportMessage}}', context.reportMessage || 'Không có')
+            .replace('{{reportDate}}', new Date(context.reportDate).toLocaleDateString('vi-VN'))
+            .replace('{{postTitle}}', context.postTitle)
+            .replace('{{postUrl}}', context.postUrl)
+            .replace('{{status}}', this.getStatusText(context.status))
+            .replace('{{adminNote}}', context.adminNote || 'Không có ghi chú thêm');
           break;
         default:
           throw new Error("Invalid email template");
       }
 
       const mailOptions = {
-        from: `"Vie Stay" <${process.env.EMAIL_USER}>`,
+        from: `"Vie Stay" <${process.env.AUTH_EMAIL}>`,
         to,
-        cc: cc || [], // ✅ Hỗ trợ CC
+        cc: cc || [],
         subject,
         html: htmlContent,
       };
