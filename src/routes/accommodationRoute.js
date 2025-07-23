@@ -20,8 +20,7 @@ router.get("/me",
 );
 
 // ✅ CRUD ROUTES
-router.post("/", 
-  restrictTo("landlord"), 
+router.post("/",
   accommodationController.createAccommodation
 );
 
