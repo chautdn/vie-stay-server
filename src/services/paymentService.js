@@ -5,6 +5,14 @@ const Room = require("../models/Room");
 const crypto = require("crypto");
 const qs = require("qs");
 const moment = require("moment");
+const axios = require("axios");
+const FormData = require("form-data");
+const fs = require("fs");
+const path = require("path");
+const {
+  generateAndUploadRentalAgreement,
+} = require("../../generateRentalAgreement");
+const fileUtils = require("../config/fileUtils");
 
 class PaymentService {
   sortObject(obj) {
@@ -23,7 +31,6 @@ class PaymentService {
     return sorted;
   }
 
-  // ✅ SỬA: Method tạo deposit payment
   async createDepositPaymentRecord(confirmationId, paymentMethod) {
     try {
       const confirmation = await AgreementConfirmation.findById(confirmationId)
@@ -42,7 +49,10 @@ class PaymentService {
         throw new Error("Agreement confirmation not found or not confirmed");
       }
 
-      const transactionId = `VIE${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      const transactionId = `VIE${Date.now()}${Math.random()
+        .toString(36)
+        .substr(2, 6)
+        .toUpperCase()}`;
 
       const payment = new Payment({
         agreementConfirmationId: confirmationId,
@@ -57,14 +67,13 @@ class PaymentService {
       });
 
       await payment.save();
-
       return { payment, transactionId };
     } catch (error) {
+      console.error("Error creating deposit payment record:", error.message);
       throw error;
     }
   }
 
-  // ✅ SỬA: Method tạo VNPay URL
   async createVNPayPaymentUrl({
     amount,
     orderInfo,
@@ -82,10 +91,9 @@ class PaymentService {
         "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
       const vnpTmnCode = process.env.VNPAY_TMN_CODE || "GH3E5VUH";
       const vnpHashSecret =
-        process.env.VNPAY_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
+        process.env.VNPAY_HASH_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
 
-      // ✅ SỬA: Return URL phải point về backend API endpoint
-      const vnpReturnUrl = `${process.env.BACKEND_URL || "http://localhost:8080"}/api/agreement-confirmations/payment/vnpay/return`;
+      const vnpReturnUrl = `${process.env.BACKEND_URL || "http://localhost:8080"}/agreement-confirmations/payment/vnpay/return`;
 
       const createDate = new Date()
         .toISOString()
@@ -103,7 +111,7 @@ class PaymentService {
           orderInfo || `Thanh toan tien coc cho ma GD:${transactionId}`,
         vnp_OrderType: "billpayment",
         vnp_Locale: "vn",
-        vnp_ReturnUrl: vnpReturnUrl, // ✅ SỬA: Backend URL
+        vnp_ReturnUrl: vnpReturnUrl,
         vnp_IpAddr: ipAddr || "127.0.0.1",
         vnp_CreateDate: createDate,
       };
@@ -124,11 +132,11 @@ class PaymentService {
         orderInfo,
       };
     } catch (error) {
+      console.error("Error creating VNPay payment URL:", error.message);
       throw new Error(`Failed to create VNPay payment URL: ${error.message}`);
     }
   }
 
-  // ✅ SỬA: Main method để tạo deposit payment
   async createDepositPayment({
     confirmationId,
     tenantId,
@@ -138,16 +146,14 @@ class PaymentService {
   }) {
     try {
       if (paymentMethod === "vnpay") {
-        // ✅ SỬA: Tạo payment record trước
         const { payment, transactionId } =
           await this.createDepositPaymentRecord(confirmationId, paymentMethod);
 
-        // ✅ SỬA: Tạo VNPay URL với transactionId
         const vnpayResult = await this.createVNPayPaymentUrl({
           amount,
           orderInfo: `Deposit payment for confirmation ${confirmationId}`,
           confirmationId,
-          transactionId, // ✅ Pass transactionId
+          transactionId,
           ipAddr,
         });
 
@@ -166,6 +172,7 @@ class PaymentService {
         status: "pending",
       };
     } catch (error) {
+      console.error("Error creating deposit payment:", error.message);
       throw error;
     }
   }
@@ -179,9 +186,8 @@ class PaymentService {
       vnpParams = this.sortObject(vnpParams);
       const signData = qs.stringify(vnpParams, { encode: false });
 
-      // ✅ SỬA: Sử dụng đúng env variable name
       const vnpHashSecret =
-        process.env.VNPAY_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
+        process.env.VNPAY_HASH_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
       const hmac = crypto.createHmac("sha512", vnpHashSecret);
       const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
 
@@ -196,7 +202,26 @@ class PaymentService {
       const transactionId = vnpParams["vnp_TxnRef"];
       const responseCode = vnpParams["vnp_ResponseCode"];
 
-      const payment = await Payment.findOne({ transactionId });
+      const payment = await Payment.findOne({ transactionId }).populate({
+        path: "agreementConfirmationId",
+        populate: [
+          {
+            path: "tenantId",
+            select: "name email phoneNumber nationalId address",
+          },
+          {
+            path: "landlordId",
+            select: "name email phoneNumber nationalId address wallet",
+          },
+          {
+            path: "roomId",
+            populate: {
+              path: "accommodationId",
+              select: "name address",
+            },
+          },
+        ],
+      });
 
       if (!payment) {
         console.log("❌ Payment not found for transactionId:", transactionId);
@@ -213,10 +238,62 @@ class PaymentService {
         payment.gatewayResponse = vnpParams;
         await payment.save();
 
-        // ✅ Create tenancy agreement AND add tenant to room
-        const result = await this.createTenancyAgreementAfterPayment(
-          payment._id
-        );
+        // ✅ Add tenant vào room + Chuyển tiền vào ví landlord
+        try {
+          await Room.findByIdAndUpdate(
+            payment.agreementConfirmationId.roomId._id,
+            {
+              currentTenant: payment.agreementConfirmationId.tenantId._id,
+              isAvailable: false,
+              $push: {
+                tenantHistory: {
+                  tenantId: payment.agreementConfirmationId.tenantId._id,
+                  startDate:
+                    payment.agreementConfirmationId.agreementTerms.startDate,
+                  status: "payment_completed",
+                  paymentDate: new Date(),
+                  paymentId: payment._id,
+                },
+              },
+            },
+            { new: true }
+          );
+
+          await AgreementConfirmation.findByIdAndUpdate(
+            payment.agreementConfirmationId._id,
+            {
+              status: "payment_completed",
+              paymentCompletedAt: new Date(),
+              paymentId: payment._id,
+            }
+          );
+
+          // ✅ THÊM: Chuyển tiền cọc vào ví chủ nhà (không gửi email)
+          await this.transferDepositToLandlordWallet(payment);
+        } catch (roomUpdateError) {
+          console.error(
+            "❌ Error updating room after payment:",
+            roomUpdateError
+          );
+        }
+
+        // Tạo hợp đồng ký
+        let result;
+        try {
+          result = await this.createTenancyAgreementAfterPayment(
+            payment.agreementConfirmationId,
+            payment
+          );
+        } catch (contractError) {
+          console.error("Contract signing failed:", contractError.message);
+          return {
+            success: true,
+            payment,
+            message:
+              "Payment completed and tenant added to room, but contract signing failed. Please contact support.",
+            redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?transactionId=${transactionId}&amount=${payment.amount}&confirmationId=${payment.agreementConfirmationId._id}&warning=contract_failed`,
+          };
+        }
 
         console.log("✅ Tenancy agreement created and tenant added to room");
         console.log("Room update result:", result.roomUpdate);
@@ -226,7 +303,7 @@ class PaymentService {
           payment,
           tenancyAgreement: result.tenancyAgreement,
           roomUpdate: result.roomUpdate,
-          redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?transactionId=${transactionId}&amount=${payment.amount}&confirmationId=${payment.agreementConfirmationId}`,
+          redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?transactionId=${transactionId}&amount=${payment.amount}&confirmationId=${payment.agreementConfirmationId._id}`,
         };
       } else {
         payment.status = "failed";
@@ -242,6 +319,7 @@ class PaymentService {
         };
       }
     } catch (error) {
+      console.error("VNPay return error:", error.message);
       return {
         success: false,
         redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=server_error`,
@@ -249,46 +327,345 @@ class PaymentService {
     }
   }
 
-  // ✅ THÊM: Method để xử lý sau khi payment thành công
-  async createTenancyAgreementAfterPayment(paymentId) {
+  // ✅ THÊM method chuyển tiền vào ví (không gửi email)
+  async transferDepositToLandlordWallet(payment) {
     try {
-      // 1. Get payment details
-      const payment = await Payment.findById(paymentId).populate({
-        path: "agreementConfirmationId",
-        populate: [
-          { path: "tenantId", select: "name email phoneNumber" },
-          { path: "landlordId", select: "name email phoneNumber" },
-          { path: "roomId", populate: { path: "accommodationId" } },
-        ],
+      const User = require("../models/User");
+      const Transaction = require("../models/Transaction");
+
+      const landlordId = payment.agreementConfirmationId.landlordId._id;
+      const depositAmount = payment.amount;
+
+      // Tạo transaction record
+      const transaction = new Transaction({
+        user: landlordId,
+        type: "deposit",
+        amount: depositAmount,
+        status: "success",
+        message: `Tiền cọc từ ${payment.agreementConfirmationId.tenantId.name} - Phòng ${payment.agreementConfirmationId.roomId.roomNumber}`,
+        relatedPayment: payment._id,
+        transactionId: `DEPOSIT_${payment.transactionId}`,
       });
 
-      if (!payment || !payment.agreementConfirmationId) {
-        throw new Error("Payment or confirmation not found");
-      }
+      await transaction.save();
 
-      const confirmation = payment.agreementConfirmationId;
-
-      // 2. Update confirmation payment status
-      await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
-        paymentStatus: "completed",
-        paidAt: new Date(),
-        paymentId: payment._id,
-      });
-
-      // 3. Add tenant to room
-      await Room.findByIdAndUpdate(confirmation.roomId._id, {
-        currentTenant: confirmation.tenantId._id,
-        isAvailable: false,
-        $push: {
-          tenantHistory: {
-            tenantId: confirmation.tenantId._id,
-            startDate: confirmation.agreementTerms.startDate,
-            status: "active",
+      // Cập nhật ví chủ nhà
+      const landlordUpdate = await User.findByIdAndUpdate(
+        landlordId,
+        {
+          $inc: { "wallet.balance": depositAmount },
+          $push: {
+            "wallet.transactions": transaction._id,
           },
         },
+        { new: true }
+      );
+
+      console.log(`✅ Transferred ${depositAmount} VND to landlord wallet:`, {
+        landlordId: landlordId,
+        newBalance: landlordUpdate.wallet.balance,
+        transactionId: transaction._id,
       });
 
-      // 4. Create tenancy agreement
+      // ✅ THÊM: Trigger frontend update thông qua custom event
+      // (Sẽ được xử lý ở payment success page)
+      global.walletUpdateEvent = {
+        landlordId: landlordId.toString(),
+        newBalance: landlordUpdate.wallet.balance,
+        transaction: {
+          id: transaction._id,
+          type: transaction.type,
+          amount: transaction.amount,
+          status: transaction.status,
+          message: transaction.message,
+          createdAt: transaction.createdAt,
+        },
+      };
+
+      return {
+        success: true,
+        transaction,
+        newBalance: landlordUpdate.wallet.balance,
+      };
+    } catch (error) {
+      console.error("❌ Error transferring deposit to landlord wallet:", error);
+      throw error;
+    }
+  }
+
+  async createTenancyAgreementAfterPayment(confirmation, payment) {
+    try {
+      // Validate required data
+      if (!confirmation.tenantId?.name) {
+        throw new Error(`Tenant information is missing`);
+      }
+
+      if (!confirmation.landlordId?.name) {
+        throw new Error(`Landlord information is missing`);
+      }
+
+      if (!confirmation.roomId?.accommodationId) {
+        throw new Error("Property information is missing");
+      }
+
+      const result = await this.sendContractForSigning(confirmation, payment);
+      return result;
+    } catch (error) {
+      console.error("Error in createTenancyAgreementAfterPayment:", error);
+      throw error;
+    }
+  }
+
+  async sendContractForSigning(confirmation, payment, retries = 3) {
+    let attempt = 0;
+
+    while (attempt < retries) {
+      try {
+        attempt++;
+
+        if (!confirmation.tenantId?.name || !confirmation.landlordId?.name) {
+          throw new Error("Missing required tenant or landlord information");
+        }
+
+        // Generate contract data
+        const agreementData = {
+          contractId: confirmation._id.toString(),
+          tenantName: confirmation.tenantId.name,
+          tenantIdNumber: confirmation.tenantId.nationalId || "123456789",
+          tenantAddress:
+            confirmation.tenantId.address?.fullAddress || "Chưa cập nhật",
+          tenantPhone: confirmation.tenantId.phoneNumber || "Chưa cập nhật",
+          landlordName: confirmation.landlordId.name,
+          landlordIdNumber: confirmation.landlordId.nationalId || "987654321",
+          landlordAddress:
+            confirmation.landlordId.address?.fullAddress || "Chưa cập nhật",
+          landlordPhone: confirmation.landlordId.phoneNumber || "Chưa cập nhật",
+          propertyAddress:
+            confirmation.roomId.accommodationId?.address?.fullAddress ||
+            confirmation.roomId.accommodationId?.name ||
+            "Địa chỉ chưa cập nhật",
+          propertyType: confirmation.roomId.type || "Phòng trọ",
+          startDate: confirmation.agreementTerms.startDate,
+          endDate: new Date(
+            confirmation.agreementTerms.startDate.getTime() +
+              365 * 24 * 60 * 60 * 1000
+          ),
+          monthlyRent: confirmation.agreementTerms.monthlyRent,
+          deposit: confirmation.agreementTerms.deposit,
+          paymentTerms: "Thanh toán vào ngày 5 hàng tháng qua chuyển khoản",
+          utilityTerms: "Người thuê chịu chi phí điện, nước, internet",
+        };
+
+        // Generate and upload rental agreement
+        const { pdfUrl, url } =
+          await generateAndUploadRentalAgreement(agreementData);
+
+        // Convert URL to Base64
+        const base64String = await fileUtils.getBase64FromUrl(pdfUrl || url);
+
+        const payload = {
+          title: `Hợp đồng thuê nhà - ${confirmation._id}`,
+          message: `Xin chào ${confirmation.tenantId.name},\n\nVui lòng ký vào hợp đồng thuê nhà. Chủ nhà đã ký sẵn.\n\nCảm ơn bạn!`,
+          disableEmails: false,
+          enableSigningOrder: false,
+          expiryDays: 30,
+          files: [
+            {
+              base64: `data:application/pdf;base64,${base64String}`,
+              fileName: `rental-agreement-${confirmation._id}.pdf`,
+            },
+          ],
+          signers: [
+            {
+              name: confirmation.tenantId.name,
+              emailAddress: confirmation.tenantId.email,
+              signerType: "Signer",
+              signerOrder: 1,
+              formFields: [
+                {
+                  fieldType: "Signature",
+                  pageNumber: 2,
+                  bounds: {
+                    x: 340,
+                    y: 285,
+                    width: 180,
+                    height: 50,
+                  },
+                  isRequired: true,
+                  placeholder: "Please sign here",
+                },
+                {
+                  fieldType: "DateSigned",
+                  pageNumber: 2,
+                  bounds: {
+                    x: 420,
+                    y: 350,
+                    width: 100,
+                    height: 15,
+                  },
+                  isRequired: true,
+                  placeholder: "Date",
+                },
+              ],
+            },
+          ],
+          metadata: {
+            confirmationId: confirmation._id.toString(),
+            tenantEmail: confirmation.tenantId.email,
+            landlordEmail: confirmation.landlordId.email,
+          },
+        };
+
+        const response = await fetch(
+          "https://api.boldsign.com/v1/document/send",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-KEY": process.env.BOLDSIGN_API_KEY,
+              Accept: "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          console.error("BoldSign Error:", responseData);
+          throw new Error(`BoldSign API error: ${response.status}`);
+        }
+
+        // Update confirmation with document ID
+        await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+          documentId: responseData.documentId,
+          signatureStatus: "sent",
+        });
+
+        return {
+          success: true,
+          documentId: responseData.documentId,
+          message: "Contract sent for signing successfully",
+        };
+      } catch (error) {
+        if (attempt >= retries) {
+          throw new Error(
+            `Failed to send contract after ${retries} attempts: ${error.message}`
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      }
+    }
+  }
+
+  async handleSignatureCallback(data) {
+    try {
+      const { documentId, status, eventType } = data;
+
+      const confirmation = await AgreementConfirmation.findOne({ documentId });
+      if (!confirmation) {
+        throw new Error(
+          `Confirmation not found for document ID: ${documentId}`
+        );
+      }
+
+      // Handle different event types
+      if (eventType === "Completed" || status === "Completed") {
+        // Download the signed document
+        await this.downloadSignedDocument(documentId, confirmation);
+
+        // Update confirmation status
+        await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+          signatureStatus: "completed",
+          signedAt: new Date(),
+        });
+
+        // Create tenancy agreement
+        const tenancyAgreement =
+          await this.createTenancyAgreementRecord(confirmation);
+
+        // Update room status
+        await Room.findByIdAndUpdate(confirmation.roomId._id, {
+          currentTenant: confirmation.tenantId._id,
+          isAvailable: false,
+          $push: {
+            tenantHistory: {
+              tenantId: confirmation.tenantId._id,
+              startDate: confirmation.agreementTerms.startDate,
+              status: "active",
+            },
+          },
+        });
+
+        // Send success notification
+        await this.sendContractCompletedEmail(confirmation);
+
+        return {
+          tenancyAgreement,
+          roomUpdate: true,
+          confirmationUpdate: true,
+        };
+      } else if (eventType === "Declined" || status === "Declined") {
+        await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+          signatureStatus: "declined",
+          declinedAt: new Date(),
+        });
+
+        return { message: `Contract was declined` };
+      } else {
+        // Update status for other events (Sent, Viewed, etc.)
+        await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+          signatureStatus: status.toLowerCase(),
+        });
+
+        return { message: `Signature status updated to ${status}` };
+      }
+    } catch (error) {
+      console.error("Error handling signature callback:", error.message);
+      throw error;
+    }
+  }
+
+  async downloadSignedDocument(documentId, confirmation) {
+    try {
+      const DOWNLOAD_URL = "https://api.boldsign.com/v1/document/download";
+
+      const downloadResponse = await axios.get(DOWNLOAD_URL, {
+        params: { documentId },
+        headers: {
+          "X-API-KEY": process.env.BOLDSIGN_API_KEY,
+        },
+        responseType: "arraybuffer",
+        timeout: 30000,
+      });
+
+      const signedContractPath = path.join(
+        __dirname,
+        "../uploads/signed-contracts",
+        `signed-rental-agreement-${documentId}.pdf`
+      );
+
+      fs.mkdirSync(path.dirname(signedContractPath), { recursive: true });
+      fs.writeFileSync(signedContractPath, downloadResponse.data);
+
+      await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+        signedContractPath: signedContractPath,
+      });
+
+      return signedContractPath;
+    } catch (error) {
+      console.error("Error downloading signed document:", error.message);
+      throw error;
+    }
+  }
+
+  async createTenancyAgreementRecord(confirmation) {
+    try {
+      const payment = await Payment.findOne({
+        agreementConfirmationId: confirmation._id,
+        status: "completed",
+      });
+
       const tenancyAgreement = new TenancyAgreement({
         tenantId: confirmation.tenantId._id,
         roomId: confirmation.roomId._id,
@@ -302,358 +679,184 @@ class PaymentService {
         utilityRates: confirmation.agreementTerms.utilityRates,
         additionalFees: confirmation.agreementTerms.additionalFees,
         status: "active",
-        paymentId: payment._id,
+        paymentId: payment?._id,
+        signedContractPath: confirmation.signedContractPath,
+        documentId: confirmation.documentId,
       });
 
       const savedTenancyAgreement = await tenancyAgreement.save();
-
-      // 5. Send success email (optional)
-      try {
-        await this.sendPaymentSuccessEmail(confirmation, payment);
-      } catch (emailError) {
-        console.error("⚠️ Failed to send success email:", emailError);
-        // Don't fail the whole process for email error
-      }
-
-      return {
-        tenancyAgreement: savedTenancyAgreement,
-        roomUpdate: true,
-        confirmationUpdate: true,
-      };
+      return savedTenancyAgreement;
     } catch (error) {
+      console.error("Error creating tenancy agreement record:", error.message);
       throw error;
     }
   }
 
-  // ✅ THÊM: Send success email
-  async sendPaymentSuccessEmail(confirmation, payment) {
+  async sendContractCompletedEmail(confirmation) {
     try {
       const emailService = require("./emailService");
 
+      await confirmation.populate([
+        { path: "tenantId", select: "name email phoneNumber" },
+        { path: "landlordId", select: "name email phoneNumber" },
+        { path: "roomId", select: "roomNumber" },
+        {
+          path: "roomId",
+          populate: { path: "accommodationId", select: "name" }, // ✅ SỬA: accommodationId thay vì accommodation
+        },
+      ]);
+
       const emailData = {
         to: confirmation.tenantId.email,
-        subject: "🎉 Payment Successful - Welcome to Your New Home!",
-        template: "paymentSuccess",
+        cc: [confirmation.landlordId.email], // ✅ Đảm bảo có CC
+        subject: "🎉 Hợp đồng thuê nhà đã hoàn thành",
+        template: "contractCompleted",
         context: {
           tenantName: confirmation.tenantId.name,
-          propertyName: confirmation.roomId.accommodationId.name,
-          roomName: confirmation.roomId.name,
-          amount: payment.amount,
-          transactionId: payment.transactionId,
           landlordName: confirmation.landlordId.name,
-          landlordEmail: confirmation.landlordId.email,
-          landlordPhone: confirmation.landlordId.phoneNumber,
-          startDate: confirmation.agreementTerms.startDate,
-          monthlyRent: confirmation.agreementTerms.monthlyRent,
+          roomName: confirmation.roomId.roomNumber,
+          accommodationName: confirmation.roomId.accommodationId?.name || "N/A", // ✅ SỬA
+          startDate: confirmation.agreementTerms.startDate, // ✅ SỬA: thêm agreementTerms
+          endDate: confirmation.agreementTerms.endDate, // ✅ SỬA: thêm agreementTerms
+          monthlyRent: confirmation.agreementTerms.monthlyRent, // ✅ SỬA: thêm agreementTerms
+          deposit: confirmation.agreementTerms.deposit, // ✅ SỬA: thêm agreementTerms
+          tenantContact: {
+            email: confirmation.tenantId.email,
+            phone: confirmation.tenantId.phoneNumber,
+          },
+          landlordContact: {
+            email: confirmation.landlordId.email,
+            phone: confirmation.landlordId.phoneNumber,
+          },
         },
       };
 
+      console.log("📧 Sending contract completed email to:", {
+        to: emailData.to,
+        cc: emailData.cc,
+      });
+
       await emailService.sendEmail(emailData);
+      console.log("✅ Contract completed email sent successfully");
     } catch (error) {
+      console.error("❌ Error sending contract completed email:", error);
       throw error;
     }
   }
 
-  async getPaymentsByTenant(tenantId) {
+  getBoldSignErrorMessage(error) {
+    if (error.response?.data?.errors) {
+      const errors = error.response.data.errors;
+      if (Array.isArray(errors)) {
+        return errors.map((err) => err.message || err).join(", ");
+      } else if (typeof errors === "object") {
+        return Object.values(errors).flat().join(", ");
+      }
+    }
+
+    if (error.response?.data?.message) {
+      return error.response.data.message;
+    }
+
+    return error.message || "Unknown BoldSign API error";
+  }
+
+  async getDocumentStatus(documentId) {
     try {
-      const payments = await Payment.find({ tenantId })
-        .populate({
-          path: "agreementConfirmationId",
-          populate: {
-            path: "roomId",
-            populate: {
-              path: "accommodationId",
+      const response = await axios.get(
+        `https://api.boldsign.com/v1/document/properties`,
+        {
+          params: { documentId },
+          headers: {
+            "X-API-KEY": process.env.BOLDSIGN_API_KEY,
+            "Content-Type": "application/json",
+          },
+          timeout: 10000,
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error("Error getting document status:", error.message);
+      throw error;
+    }
+  }
+
+  async resendDocument(documentId, signerEmail) {
+    try {
+      const response = await axios.post(
+        `https://api.boldsign.com/v1/document/remind`,
+        {
+          documentId: documentId,
+          signerEmails: [signerEmail],
+          message: "Nhắc nhở ký hợp đồng thuê phòng",
+        },
+        {
+          headers: {
+            "X-API-KEY": process.env.BOLDSIGN_API_KEY,
+            "Content-Type": "application/json",
+          },
+          timeout: 10000,
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error("Error resending document:", error.message);
+      throw error;
+    }
+  }
+
+  async addTenantToRoom(roomId, tenantId, agreementTerms, paymentInfo) {
+    try {
+      const roomUpdate = await Room.findByIdAndUpdate(
+        roomId,
+        {
+          currentTenant: tenantId,
+          isAvailable: false,
+          $push: {
+            tenantHistory: {
+              tenantId: tenantId,
+              startDate: agreementTerms.startDate,
+              status: "payment_completed",
+              paymentDate: new Date(),
+              paymentId: paymentInfo._id,
+              monthlyRent: agreementTerms.monthlyRent,
+              deposit: agreementTerms.deposit,
             },
           },
-        })
-        .sort({ createdAt: -1 });
+        },
+        { new: true }
+      );
 
-      return payments;
+      return roomUpdate;
     } catch (error) {
+      console.error("❌ Error adding tenant to room:", error);
       throw error;
     }
   }
 
-  async getPaymentDetails(paymentId) {
+  async removeTenantFromRoom(roomId, tenantId, reason = "contract_ended") {
     try {
-      const payment = await Payment.findById(paymentId)
-        .populate("tenantId")
-        .populate({
-          path: "agreementConfirmationId",
-          populate: {
-            path: "roomId",
-            populate: {
-              path: "accommodationId",
+      const roomUpdate = await Room.findByIdAndUpdate(
+        roomId,
+        {
+          currentTenant: null,
+          isAvailable: true,
+          $push: {
+            tenantHistory: {
+              tenantId: tenantId,
+              endDate: new Date(),
+              status: reason,
             },
           },
-        });
+        },
+        { new: true }
+      );
 
-      return payment;
+      return roomUpdate;
     } catch (error) {
-      throw error;
-    }
-  }
-
-  // ✅ THÊM: Verify VNPay signature method
-  verifyVNPaySignature(vnpayData) {
-    try {
-      const crypto = require("crypto");
-      const qs = require("qs");
-
-      // Remove hash from data
-      const { vnp_SecureHash, vnp_SecureHashType, ...dataToVerify } = vnpayData;
-
-      // Sort parameters
-      const sortedParams = this.sortObject(dataToVerify);
-      const signData = qs.stringify(sortedParams, { encode: false });
-
-      // Create signature
-      const vnpHashSecret =
-        process.env.VNPAY_HASH_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
-      const hmac = crypto.createHmac("sha512", vnpHashSecret);
-      const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-
-      return signed === vnp_SecureHash;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  // ✅ THÊM: Get VNPay error messages method
-  getVNPayErrorMessage(responseCode) {
-    const errorMessages = {
-      "00": "Giao dịch thành công",
-      "07": "Trừ tiền thành công. Giao dịch bị nghi ngờ (liên quan tới lừa đảo, giao dịch bất thường).",
-      "09": "Giao dịch không thành công do: Thẻ/Tài khoản của khách hàng chưa đăng ký dịch vụ InternetBanking tại ngân hàng.",
-      10: "Giao dịch không thành công do: Khách hàng xác thực thông tin thẻ/tài khoản không đúng quá 3 lần",
-      11: "Giao dịch không thành công do: Đã hết hạn chờ thanh toán.",
-      12: "Giao dịch không thành công do: Thẻ/Tài khoản của khách hàng bị khóa.",
-      13: "Giao dịch không thành công do Quý khách nhập sai mật khẩu xác thực giao dịch (OTP).",
-      24: "Giao dịch không thành công do: Khách hàng hủy giao dịch",
-      51: "Giao dịch không thành công do: Tài khoản của quý khách không đủ số dư để thực hiện giao dịch.",
-      65: "Giao dịch không thành công do: Tài khoản của Quý khách đã vượt quá hạn mức giao dịch trong ngày.",
-      75: "Ngân hàng thanh toán đang bảo trì.",
-      79: "Giao dịch không thành công do: KH nhập sai mật khẩu thanh toán quá số lần quy định.",
-      99: "Các lỗi khác (lỗi còn lại, không có trong danh sách mã lỗi đã liệt kê)",
-    };
-
-    return errorMessages[responseCode] || "Lỗi không xác định";
-  }
-
-  // Tìm method createVNPayURL và sửa returnUrl
-  async createVNPayURL(transactionId, amount, orderInfo) {
-    try {
-      const vnpUrl =
-        process.env.VNPAY_URL ||
-        "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-      const secretKey =
-        process.env.VNPAY_HASH_SECRET || "TGHRDW9977MIGV71O2383I2E4R9DMRS4";
-      const tmnCode = process.env.VNPAY_TMN_CODE || "GH3E5VUH";
-
-      // ✅ SỬA: Return URL phải point về backend để xử lý callback
-      const returnUrl = `${
-        process.env.BACKEND_URL || "http://localhost:8080"
-      }/api/agreement-confirmations/payment/vnpay/return`;
-
-      const createDate = moment().format("YYYYMMDDHHmmss");
-      const ipAddr = "127.0.0.1"; // hoặc lấy từ request
-      const locale = "vn";
-
-      // Tạo các parameters
-      let vnpParams = {
-        vnp_Version: "2.1.0",
-        vnp_Command: "pay",
-        vnp_TmnCode: tmnCode,
-        vnp_Amount: amount * 100, // VNPay tính bằng xu
-        vnp_CurrCode: "VND",
-        vnp_TxnRef: transactionId,
-        vnp_OrderInfo: orderInfo,
-        vnp_OrderType: "billpayment",
-        vnp_Locale: locale,
-        vnp_ReturnUrl: returnUrl,
-        vnp_IpAddr: ipAddr,
-        vnp_CreateDate: createDate,
-      };
-
-      // Sort và tạo sign data
-      const sortedParams = this.sortObject(vnpParams);
-      const signData = qs.stringify(sortedParams, { encode: false });
-
-      // Tạo secure hash
-      const hmac = crypto.createHmac("sha512", secretKey);
-      const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-
-      vnpParams.vnp_SecureHash = signed;
-
-      // Tạo payment URL
-      const paymentUrl = `${vnpUrl}?${qs.stringify(vnpParams, { encode: false })}`;
-
-      return {
-        paymentUrl,
-        vnpParams,
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // ✅ THÊM: Tạo yêu cầu rút tiền VNPay
-  async createWithdrawalRequest({
-    tenantId,
-    confirmationId,
-    amount,
-    requestType = "deposit_refund",
-    reason,
-    vnpayInfo,
-  }) {
-    try {
-      const WithdrawalRequest = require("../models/WithdrawalRequest");
-
-      // Validate confirmation và payment
-      const confirmation = await AgreementConfirmation.findById(confirmationId)
-        .populate("roomId")
-        .populate("landlordId");
-
-      if (!confirmation) {
-        throw new Error("Confirmation not found");
-      }
-
-      const payment = await Payment.findOne({
-        agreementConfirmationId: confirmationId,
-        status: "completed",
-      });
-
-      if (!payment) {
-        throw new Error("No completed payment found for this confirmation");
-      }
-
-      // Check if already has pending withdrawal
-      const existingRequest = await WithdrawalRequest.findOne({
-        tenantId,
-        agreementConfirmationId: confirmationId,
-        status: { $in: ["pending", "approved", "processing"] },
-      });
-
-      if (existingRequest) {
-        throw new Error("Already has a pending withdrawal request");
-      }
-
-      // Create withdrawal request
-      const withdrawalRequest = new WithdrawalRequest({
-        tenantId,
-        landlordId: confirmation.landlordId._id,
-        agreementConfirmationId: confirmationId,
-        paymentId: payment._id,
-        roomId: confirmation.roomId._id,
-        amount,
-        requestType,
-        reason,
-        vnpayInfo,
-        status: "pending",
-      });
-
-      await withdrawalRequest.save();
-
-      // Send notification to landlord
-      await this.sendWithdrawalNotification(withdrawalRequest);
-
-      return withdrawalRequest;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // ✅ THÊM: Landlord approve withdrawal và process VNPay
-  async approveWithdrawal(
-    requestId,
-    landlordId,
-    {
-      deductionAmount = 0,
-      deductionReason = "",
-      responseNote = "",
-      ipAddr = "127.0.0.1",
-    }
-  ) {
-    try {
-      const WithdrawalRequest = require("../models/WithdrawalRequest");
-      const vnpayWithdrawalService = require("./vnpayWithdrawalService");
-
-      const request = await WithdrawalRequest.findOne({
-        _id: requestId,
-        landlordId,
-        status: "pending",
-      });
-
-      if (!request) {
-        throw new Error("Withdrawal request not found or not pending");
-      }
-
-      const finalAmount = request.amount - deductionAmount;
-
-      if (finalAmount <= 0) {
-        throw new Error("Final amount must be greater than 0");
-      }
-
-      // Update landlord response
-      request.status = "approved";
-      request.landlordResponse.approvedAt = new Date();
-      request.landlordResponse.responseNote = responseNote;
-      request.landlordResponse.deductionAmount = deductionAmount;
-      request.landlordResponse.deductionReason = deductionReason;
-
-      await request.save();
-
-      // Process VNPay withdrawal
-      const vnpayResult = await vnpayWithdrawalService.createWithdrawal({
-        amount: finalAmount,
-        recipientBankCode: request.vnpayInfo.bankCode,
-        recipientAccountNumber: request.vnpayInfo.accountNumber,
-        recipientName: request.vnpayInfo.accountName,
-        transactionNote: `Deposit refund: ${request.reason}`,
-        requestId: requestId,
-        ipAddr: ipAddr,
-      });
-
-      return {
-        request,
-        vnpayResult,
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // ✅ THÊM: Get tenant withdrawals
-  async getTenantWithdrawals(tenantId) {
-    try {
-      const WithdrawalRequest = require("../models/WithdrawalRequest");
-
-      const requests = await WithdrawalRequest.find({ tenantId })
-        .populate("roomId")
-        .populate("landlordId", "name email phoneNumber")
-        .sort({ createdAt: -1 });
-
-      return requests;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // ✅ THÊM: Get pending withdrawals for landlord
-  async getPendingWithdrawals(landlordId) {
-    try {
-      const WithdrawalRequest = require("../models/WithdrawalRequest");
-
-      const requests = await WithdrawalRequest.find({
-        landlordId,
-        status: "pending",
-      })
-        .populate("tenantId", "name email phoneNumber")
-        .populate("roomId")
-        .sort({ createdAt: -1 });
-
-      return requests;
-    } catch (error) {
+      console.error("❌ Error removing tenant from room:", error);
       throw error;
     }
   }

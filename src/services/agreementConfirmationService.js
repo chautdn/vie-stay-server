@@ -443,53 +443,16 @@ class AgreementConfirmationService {
         confirmation._id
       );
 
-      // 1. Thêm tenant vào room
-      const Room = require("../models/Room");
-      await Room.findByIdAndUpdate(confirmation.roomId._id, {
-        currentTenant: confirmation.tenantId._id,
-        isAvailable: false,
-        $push: {
-          tenantHistory: {
-            tenantId: confirmation.tenantId._id,
-            startDate: confirmation.agreementTerms.startDate,
-            status: "active",
-          },
-        },
+      // Chỉ cập nhật payment status
+      await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
+        paymentStatus: "completed",
+        paidAt: new Date(),
       });
 
-      console.log("✅ Tenant added to room successfully");
-
-      // 2. Tạo tenancy agreement
-      const TenancyAgreement = require("../models/TenancyAgreement");
-      const tenancyAgreement = new TenancyAgreement({
-        tenantId: confirmation.tenantId._id,
-        roomId: confirmation.roomId._id,
-        accommodationId: confirmation.roomId.accommodationId,
-        landlordId: confirmation.landlordId._id,
-        startDate: confirmation.agreementTerms.startDate,
-        endDate: confirmation.agreementTerms.endDate,
-        monthlyRent: confirmation.agreementTerms.monthlyRent,
-        deposit: confirmation.agreementTerms.deposit,
-        notes: confirmation.agreementTerms.notes,
-        utilityRates: confirmation.agreementTerms.utilityRates,
-        additionalFees: confirmation.agreementTerms.additionalFees,
-        status: "active",
-      });
-
-      await tenancyAgreement.save();
-      console.log("✅ Tenancy agreement created successfully");
-
-      // 3. Update confirmation với tenancy agreement ID
-      confirmation.tenancyAgreementId = tenancyAgreement._id;
-      await confirmation.save();
-
-      // 4. Gửi email thông báo thành công với thông tin landlord
-      await this.sendPaymentCompletedEmail(confirmation);
-
-      console.log("🎉 Payment completion process finished successfully");
+      console.log("✅ Payment status updated successfully");
     } catch (error) {
       console.error("❌ Error in handlePaymentCompleted:", error);
-      // Không throw error để không làm gián đoạn payment flow
+      throw error;
     }
   }
 
