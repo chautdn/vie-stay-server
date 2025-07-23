@@ -3,21 +3,14 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
-    userId: {
+    user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
     type: {
       type: String,
-      enum: [
-        "deposit_received",
-        "rent_received",
-        "withdrawal",
-        "refund_deposit",
-        "penalty",
-        "bonus",
-      ],
+      enum: ["deposit", "withdraw", "payment"],
       required: true,
     },
     amount: {
@@ -27,32 +20,27 @@ const transactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "completed", "failed", "cancelled"],
+      enum: ["pending", "success", "failed"],
       default: "pending",
     },
-    description: {
+    provider: {
       type: String,
-      required: true,
+    },
+    externalId: {
+      type: String,
     },
     transactionId: {
       type: String,
       unique: true,
-      required: true,
+      sparse: true, // ✅ Cho phép null để không conflict với data cũ
     },
     relatedPayment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
     },
-    metadata: {
-      type: Object,
-    },
+    message: String,
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
-
-transactionSchema.index({ userId: 1, createdAt: -1 });
-transactionSchema.index({ transactionId: 1 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

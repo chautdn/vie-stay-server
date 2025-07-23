@@ -333,19 +333,13 @@ class PaymentService {
 
       // Tạo transaction record
       const transaction = new Transaction({
-        userId: landlordId,
-        type: "deposit_received",
+        user: landlordId,
+        type: "deposit",
         amount: depositAmount,
-        status: "completed",
-        description: `Tiền cọc từ ${payment.agreementConfirmationId.tenantId.name} - Phòng ${payment.agreementConfirmationId.roomId.roomNumber}`,
+        status: "success",
+        message: `Tiền cọc từ ${payment.agreementConfirmationId.tenantId.name} - Phòng ${payment.agreementConfirmationId.roomId.roomNumber}`,
         relatedPayment: payment._id,
         transactionId: `DEPOSIT_${payment.transactionId}`,
-        metadata: {
-          tenantId: payment.agreementConfirmationId.tenantId._id,
-          roomId: payment.agreementConfirmationId.roomId._id,
-          confirmationId: payment.agreementConfirmationId._id,
-          originalTransactionId: payment.transactionId,
-        },
       });
 
       await transaction.save();
@@ -361,6 +355,27 @@ class PaymentService {
         },
         { new: true }
       );
+
+      console.log(`✅ Transferred ${depositAmount} VND to landlord wallet:`, {
+        landlordId: landlordId,
+        newBalance: landlordUpdate.wallet.balance,
+        transactionId: transaction._id,
+      });
+
+      // ✅ THÊM: Trigger frontend update thông qua custom event
+      // (Sẽ được xử lý ở payment success page)
+      global.walletUpdateEvent = {
+        landlordId: landlordId.toString(),
+        newBalance: landlordUpdate.wallet.balance,
+        transaction: {
+          id: transaction._id,
+          type: transaction.type,
+          amount: transaction.amount,
+          status: transaction.status,
+          message: transaction.message,
+          createdAt: transaction.createdAt,
+        },
+      };
 
       return {
         success: true,
