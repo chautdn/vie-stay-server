@@ -214,14 +214,14 @@ router.get("/test", (req, res) => {
 router.post("/process-payment", protect, async (req, res) => {
   try {
     const { orderCode } = req.body;
-    
+
     if (!orderCode) {
       return res.status(400).json({ error: "OrderCode is required" });
     }
 
     // Find the transaction by orderCode
     const transaction = await Transaction.findOne({
-      externalId: orderCode.toString()
+      externalId: orderCode.toString(),
     }).populate("user");
 
     if (!transaction) {
@@ -241,20 +241,20 @@ router.post("/process-payment", protect, async (req, res) => {
         transaction: {
           id: transaction._id,
           amount: transaction.amount,
-          status: transaction.status
+          status: transaction.status,
         },
         wallet: {
-          balance: user.wallet?.balance || 0
-        }
+          balance: user.wallet?.balance || 0,
+        },
       });
     }
 
     // ATOMIC UPDATE: Use findOneAndUpdate to prevent race conditions
     // Step 1: Atomically update transaction status (only if still pending)
     const updatedTransaction = await Transaction.findOneAndUpdate(
-      { 
-        _id: transaction._id, 
-        status: "pending"
+      {
+        _id: transaction._id,
+        status: "pending",
       },
       { status: "success" },
       { new: true }
@@ -268,11 +268,11 @@ router.post("/process-payment", protect, async (req, res) => {
         transaction: {
           id: transaction._id,
           amount: transaction.amount,
-          status: "success"
+          status: "success",
         },
         wallet: {
-          balance: user.wallet?.balance || 0
-        }
+          balance: user.wallet?.balance || 0,
+        },
       });
     }
 
@@ -292,7 +292,9 @@ router.post("/process-payment", protect, async (req, res) => {
 
     if (!updatedUser) {
       // If user update fails, rollback transaction status
-      await Transaction.findByIdAndUpdate(transaction._id, { status: "pending" });
+      await Transaction.findByIdAndUpdate(transaction._id, {
+        status: "pending",
+      });
       throw new Error("Failed to update user wallet");
     }
 
@@ -301,17 +303,17 @@ router.post("/process-payment", protect, async (req, res) => {
       transaction: {
         id: transaction._id,
         amount: transaction.amount,
-        status: "success"
+        status: "success",
       },
       wallet: {
-        balance: updatedUser.wallet.balance
-      }
+        balance: updatedUser.wallet.balance,
+      },
     });
-
   } catch (error) {
     res.status(500).json({
       error: "Failed to process payment",
-      details: process.env.NODE_ENV === "development" ? error.message : undefined
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });

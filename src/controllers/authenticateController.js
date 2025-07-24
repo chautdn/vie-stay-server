@@ -73,12 +73,17 @@ const sendOTP = async (email, verificationToken) => {
 // Signup
 exports.signup = catchAsync(async (req, res, next) => {
   const { name, email, password } = req.body;
+
   if (!name || !email || !password) {
     return next(new AppError("Name, email, and password are required", 400));
   }
 
   const userExists = await User.findOne({ email });
+
   if (userExists) {
+    if (!userExists.isActive) {
+      return next(new AppError("Your account has been banned", 403));
+    }
     return next(new AppError("User already exists", 409));
   }
 
@@ -88,28 +93,27 @@ exports.signup = catchAsync(async (req, res, next) => {
   const hashedToken = await bcrypt.hash(verificationToken, 10);
 
   let imageUrl = {
-    public_ID: "default_avatar_public_id", // Replace with the actual public ID if available
-    url: "https://res.cloudinary.com/dvcpy4kmm/image/upload/v1738399543/default_avatar.png", // Mặc định nếu không có ảnh
+    public_ID: "default_avatar_public_id",
+    url: "https://res.cloudinary.com/dvcpy4kmm/image/upload/v1738399543/default_avatar.png",
   };
-  // // Kiểm tra nếu có file avatar gửi lên
+
+  // Uncomment and use this block if avatar upload is enabled
   // if (req.files && req.files.image) {
   //   const image = req.files.image;
   //   try {
-  //     // Upload avatar lên Cloudinary
   //     const uploadResult = await cloudinary.uploader.upload(
   //       image.tempFilePath,
   //       {
-  //         folder: "avatars", // Lưu vào thư mục avatars trên Cloudinary
+  //         folder: "avatars",
   //         width: 150,
   //         height: 150,
   //         crop: "fill",
   //       }
   //     );
-
   //     imageUrl = {
   //       public_ID: uploadResult.public_id,
   //       url: uploadResult.secure_url,
-  //     }; // Lấy URL ảnh
+  //     };
   //   } catch (err) {
   //     return next(new AppError("Error uploading avatar", 500));
   //   }
@@ -118,17 +122,13 @@ exports.signup = catchAsync(async (req, res, next) => {
   const newUser = await User.create({
     name,
     email,
-    password, // Hash the password
+    password,
     isVerified: false,
-    image: imageUrl,
+    profileImage: imageUrl.url,
     verificationToken: hashedToken,
-    verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-    // cmnd: "N/A",
-    // address: "N/A",
-    // phoneNumber: "N/A",
+    verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24h
   });
 
-  // Send OTP
   await sendOTP(email, verificationToken);
 
   res.status(201).json({
@@ -139,7 +139,7 @@ exports.signup = catchAsync(async (req, res, next) => {
         id: newUser._id,
         name: newUser.name,
         email: newUser.email,
-        image: newUser.image,
+        image: newUser.profileImage,
       },
     },
   });
@@ -229,10 +229,7 @@ exports.resendEmailVerification = catchAsync(async (req, res, next) => {
 // Login
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
-  console.log("Login request received");
-  console.log(email);
-  console.log(password);
-  console.log("Login request received");
+
   if (!email || !password) {
     return next(new AppError("Please provide email and password!", 400));
   }
@@ -241,6 +238,10 @@ exports.login = catchAsync(async (req, res, next) => {
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return next(new AppError("Incorrect email or password", 401));
+  }
+
+  if (!user.isActive) {
+    return next(new AppError("You are banned from our website", 403));
   }
 
   createSendToken(user, 200, res);
@@ -267,21 +268,25 @@ exports.googleLogin = catchAsync(async (req, res, next) => {
   let user = await User.findOne({ email });
 
   if (user) {
-    // User already exists, log them in
+    if (!user.isActive) {
+      return next(new AppError("Your account has been banned", 403));
+    }
+
+    // User is active, proceed with login
     return createSendToken(user, 200, res);
   }
 
   // Create new user if doesn't exist
   const randomPassword = crypto.randomBytes(20).toString("hex");
+
   user = await User.create({
     email,
     name,
     password: randomPassword,
-    isVerified: true, // Google users are automatically verified
-    picture, // Save profile picture URL if needed
+    isVerified: true,
+    picture,
   });
 
-  // Create and send JWT token
   createSendToken(user, 200, res);
 });
 

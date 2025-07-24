@@ -838,6 +838,8 @@ exports.banUser = catchAsync(async (req, res, next) => {
   }
 
   user.isActive = false;
+  user.isBanned = true;
+  user.banReason = reason.trim();
   await user.save();
 
   // Log the action

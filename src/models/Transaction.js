@@ -29,6 +29,15 @@ const transactionSchema = new mongoose.Schema(
     externalId: {
       type: String,
     },
+    transactionId: {
+      type: String,
+      unique: true,
+      sparse: true, // ✅ Cho phép null để không conflict với data cũ
+    },
+    relatedPayment: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
+    },
     message: String,
   },
   { timestamps: true }

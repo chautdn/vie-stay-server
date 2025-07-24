@@ -13,7 +13,6 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Email is required"],
-      // ✅ XÓA: unique: true, để tránh duplicate index
       lowercase: true,
       trim: true,
       match: [
@@ -56,6 +55,21 @@ const userSchema = new mongoose.Schema(
       maxlength: [20, "National ID cannot exceed 20 characters"],
       sparse: true,
     },
+    nationalIdFrontImage: {
+      type: String, // Cloudinary URL mặt trước
+    },
+    nationalIdBackImage: {
+      type: String, // Cloudinary URL mặt sau
+    },
+    nationalIdVerified: {
+      type: Boolean,
+      default: false,
+    },
+    nationalIdData: {
+      front: { type: Object }, // Dữ liệu OCR mặt trước
+      back: { type: Object }, // Dữ liệu OCR mặt sau
+      verifiedAt: { type: Date },
+    },
     nationalIdImage: {
       type: String,
     },
@@ -75,6 +89,61 @@ const userSchema = new mongoose.Schema(
           /^(\+84|0)[0-9]{9,10}$/,
           "Please provide a valid Vietnamese phone number",
         ],
+      },
+    },
+    bankAccount: {
+      bankName: {
+        type: String,
+        trim: true,
+        maxlength: [100, "Bank name cannot exceed 100 characters"],
+        required: false,
+      },
+      bankCode: {
+        type: String,
+        trim: true,
+        uppercase: true,
+        maxlength: [10, "Bank code cannot exceed 10 characters"],
+        required: false, 
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+        required: false,
+        validate: {
+          validator: function(v) {
+            return !v || /^[0-9]{6,20}$/.test(v);
+          },
+          message: "Account number must be 6-20 digits"
+        }
+      },
+      accountHolderName: {
+        type: String,
+        trim: true,
+        maxlength: [100, "Account holder name cannot exceed 100 characters"],
+        required: false, 
+      },
+      branch: {
+        type: String,
+        trim: true,
+        maxlength: [100, "Branch name cannot exceed 100 characters"],
+        required: false, // Optional
+      },
+      isVerified: {
+        type: Boolean,
+        default: false,
+        // Admin can verify bank account details when provided
+      },
+      verifiedAt: {
+        type: Date,
+      },
+      verifiedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        // Reference to admin who verified the account
+      },
+      addedAt: {
+        type: Date,
+        // Track when bank account info was first added
       },
     },
     role: {
@@ -130,6 +199,28 @@ const userSchema = new mongoose.Schema(
 // ✅ SỬA: Chỉ define indexes một lần ở đây
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
+
+// ✅ Virtual to check if user can withdraw (has complete and verified bank account)
+userSchema.virtual("canWithdraw").get(function () {
+  return (
+    this.bankAccount &&
+    this.bankAccount.bankName &&
+    this.bankAccount.accountNumber &&
+    this.bankAccount.accountHolderName &&
+    this.bankAccount.isVerified &&
+    this.wallet.balance > 0
+  );
+});
+
+// ✅ Virtual to check if user has any bank account info (even incomplete)
+userSchema.virtual("hasBankAccountData").get(function () {
+  return (
+    this.bankAccount &&
+    (this.bankAccount.bankName ||
+     this.bankAccount.accountNumber ||
+     this.bankAccount.accountHolderName)
+  );
+});
 
 // Hashing mật khẩu trước khi lưu
 userSchema.pre("save", async function (next) {
