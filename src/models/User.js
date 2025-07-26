@@ -198,7 +198,6 @@ const userSchema = new mongoose.Schema(
 
 // ✅ SỬA: Chỉ define indexes một lần ở đây
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
 
 // ✅ Virtual to check if user can withdraw (has complete and verified bank account)
 userSchema.virtual("canWithdraw").get(function () {
