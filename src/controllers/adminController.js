@@ -70,7 +70,7 @@ exports.getPosts = catchAsync(async (req, res, next) => {
       { contactPhone: { $regex: search, $options: "i" } },
       { "address.district": { $regex: normalizedSearch, $options: "i" } },
       { "address.ward": { $regex: normalizedSearch, $options: "i" } },
-      { "address.street": { $regex: normalizedSearch, $options: "i" } }
+      { "address.street": { $regex: normalizedSearch, $options: "i" } },
     ];
   }
 
@@ -97,96 +97,92 @@ exports.getPosts = catchAsync(async (req, res, next) => {
         _id: null,
         total: { $sum: 1 },
         pending: {
-          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
         },
         approved: {
-          $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
         },
         rejected: {
-          $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] },
         },
         autoApproved: {
-          $sum: { 
+          $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $eq: ["$status", "approved"] },
-                  { $eq: ["$isAutoApproved", true] }
-                ]
-              }, 
-              1, 
-              0
-            ] 
-          }
+                  { $eq: ["$isAutoApproved", true] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
         },
         manualApproved: {
-          $sum: { 
+          $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $eq: ["$status", "approved"] },
-                  { $ne: ["$isAutoApproved", true] }
-                ]
-              }, 
-              1, 
-              0
-            ] 
-          }
+                  { $ne: ["$isAutoApproved", true] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
         },
         active: {
-          $sum: { 
+          $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $eq: ["$status", "approved"] },
                   { $eq: ["$isAvailable", true] },
-                  { $ne: ["$adminDeactivated", true] }
-                ]
-              }, 
-              1, 
-              0
-            ] 
-          }
+                  { $ne: ["$adminDeactivated", true] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
         },
         featured: {
-          $sum: { 
+          $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $ne: ["$featuredType", "THUONG"] },
-                  { $eq: ["$isPaid", true] }
-                ]
-              }, 
-              1, 
-              0
-            ] 
-          }
+                  { $eq: ["$isPaid", true] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
         },
         totalRevenue: {
-          $sum: { 
-            $cond: [
-              { $eq: ["$isPaid", true] }, 
-              "$featuredCost", 
-              0
-            ] 
-          }
+          $sum: {
+            $cond: [{ $eq: ["$isPaid", true] }, "$featuredCost", 0],
+          },
         },
         autoApprovedRevenue: {
           $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $eq: ["$isAutoApproved", true] },
-                  { $eq: ["$isPaid", true] }
-                ]
+                  { $eq: ["$isPaid", true] },
+                ],
               },
               "$featuredCost",
-              0
-            ]
-          }
-        }
-      }
-    }
+              0,
+            ],
+          },
+        },
+      },
+    },
   ]);
 
   const statistics = stats[0] || {
@@ -199,7 +195,7 @@ exports.getPosts = catchAsync(async (req, res, next) => {
     active: 0,
     featured: 0,
     totalRevenue: 0,
-    autoApprovedRevenue: 0
+    autoApprovedRevenue: 0,
   };
 
   res.status(200).json({
@@ -234,10 +230,12 @@ exports.getPostDetails = catchAsync(async (req, res, next) => {
   // Get related posts from the same user with auto-approval info
   const relatedPosts = await Post.find({
     userId: post.userId._id,
-    _id: { $ne: post._id }
+    _id: { $ne: post._id },
   })
-  .select("title status createdAt rent featuredType isAutoApproved approvalType")
-  .limit(5);
+    .select(
+      "title status createdAt rent featuredType isAutoApproved approvalType"
+    )
+    .limit(5);
 
   // Enhanced approval information
   const approvalInfo = {
@@ -248,7 +246,7 @@ exports.getPostDetails = catchAsync(async (req, res, next) => {
     isPaid: post.isPaid,
     featuredCost: post.featuredCost || 0,
     autoRenew: post.autoRenew || false,
-    featuredEndDate: post.featuredEndDate || null
+    featuredEndDate: post.featuredEndDate || null,
   };
 
   res.status(200).json({
@@ -257,8 +255,8 @@ exports.getPostDetails = catchAsync(async (req, res, next) => {
       post: {
         ...post.toObject(),
         approvalInfo,
-        relatedPosts
-      }
+        relatedPosts,
+      },
     },
   });
 });
@@ -278,7 +276,7 @@ exports.approvePost = catchAsync(async (req, res, next) => {
   }
 
   // Check if this post has manuallyApprove method (new model)
-  if (typeof post.manuallyApprove === 'function') {
+  if (typeof post.manuallyApprove === "function") {
     // Use new model method
     await post.manuallyApprove();
   } else {
@@ -289,7 +287,7 @@ exports.approvePost = catchAsync(async (req, res, next) => {
     post.rejectionReason = undefined;
     // Mark as manually approved
     post.isAutoApproved = false;
-    post.approvalType = 'manual';
+    post.approvalType = "manual";
     post.approvalDate = new Date();
     await post.save();
   }
@@ -302,14 +300,14 @@ exports.approvePost = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: "success",
     message: "Post approved successfully",
-    data: { 
+    data: {
       post,
       approvalInfo: {
         isAutoApproved: false,
-        approvalType: 'manual',
+        approvalType: "manual",
         approvedBy: adminId,
-        approvedAt: new Date()
-      }
+        approvedAt: new Date(),
+      },
     },
   });
 });
@@ -330,7 +328,7 @@ exports.rejectPost = catchAsync(async (req, res, next) => {
   }
 
   // Check if this post has reject method (new model)
-  if (typeof post.reject === 'function') {
+  if (typeof post.reject === "function") {
     // Use new model method
     await post.reject(reason.trim());
   } else {
@@ -343,7 +341,9 @@ exports.rejectPost = catchAsync(async (req, res, next) => {
   }
 
   // Log the action with auto-approval context
-  const approvalContext = post.isAutoApproved ? " (was auto-approved)" : " (manual approval)";
+  const approvalContext = post.isAutoApproved
+    ? " (was auto-approved)"
+    : " (manual approval)";
   console.log(
     `Admin ${req.user.name} rejected post ${post.title} (${post._id})${approvalContext}: ${reason}`
   );
@@ -351,14 +351,14 @@ exports.rejectPost = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: "success",
     message: "Post rejected successfully",
-    data: { 
+    data: {
       post,
       rejectionInfo: {
         rejectedBy: adminId,
         rejectedAt: new Date(),
         reason: reason.trim(),
-        wasAutoApproved: post.isAutoApproved || false
-      }
+        wasAutoApproved: post.isAutoApproved || false,
+      },
     },
   });
 });
@@ -384,7 +384,9 @@ exports.deactivatePost = catchAsync(async (req, res, next) => {
   await post.save();
 
   // Log the action with approval context
-  const approvalContext = post.isAutoApproved ? " (auto-approved)" : " (manually approved)";
+  const approvalContext = post.isAutoApproved
+    ? " (auto-approved)"
+    : " (manually approved)";
   console.log(
     `Admin ${req.user.name} deactivated post ${post.title} (${post._id})${approvalContext}: ${reason || "Admin deactivation"}`
   );
@@ -446,24 +448,24 @@ exports.getAutoApprovalStats = catchAsync(async (req, res, next) => {
     {
       $match: {
         ...dateFilter,
-        status: 'approved'
-      }
+        status: "approved",
+      },
     },
     {
       $group: {
-        _id: '$approvalType',
+        _id: "$approvalType",
         count: { $sum: 1 },
         totalRevenue: {
           $sum: {
             $cond: [
-              { $eq: ['$approvalType', 'automatic'] },
-              '$featuredCost',
-              0
-            ]
-          }
-        }
-      }
-    }
+              { $eq: ["$approvalType", "automatic"] },
+              "$featuredCost",
+              0,
+            ],
+          },
+        },
+      },
+    },
   ]);
 
   // Featured type breakdown for auto-approved posts
@@ -472,19 +474,19 @@ exports.getAutoApprovalStats = catchAsync(async (req, res, next) => {
       $match: {
         ...dateFilter,
         isAutoApproved: true,
-        featuredType: { $ne: 'THUONG' }
-      }
+        featuredType: { $ne: "THUONG" },
+      },
     },
     {
       $group: {
-        _id: '$featuredType',
+        _id: "$featuredType",
         count: { $sum: 1 },
-        revenue: { $sum: '$featuredCost' }
-      }
+        revenue: { $sum: "$featuredCost" },
+      },
     },
     {
-      $sort: { revenue: -1 }
-    }
+      $sort: { revenue: -1 },
+    },
   ]);
 
   res.status(200).json({
@@ -494,9 +496,9 @@ exports.getAutoApprovalStats = catchAsync(async (req, res, next) => {
       featuredTypeStats,
       dateRange: {
         startDate: dateFrom,
-        endDate: dateTo
-      }
-    }
+        endDate: dateTo,
+      },
+    },
   });
 });
 
@@ -617,11 +619,12 @@ exports.getAccommodationDetails = catchAsync(async (req, res, next) => {
 });
 
 // Approve accommodation
+// Approve accommodation - Updated to add landlord role
 exports.approveAccommodation = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { notes } = req.body;
 
-  const accommodation = await Accommodation.findById(id);
+  const accommodation = await Accommodation.findById(id).populate("ownerId");
   if (!accommodation) {
     return next(new AppError("Accommodation not found", 404));
   }
@@ -632,10 +635,12 @@ exports.approveAccommodation = catchAsync(async (req, res, next) => {
 
   await accommodation.approve(req.user._id);
 
-  // Log the action
-  console.log(
-    `Admin ${req.user.name} approved accommodation ${accommodation.name}`
-  );
+  // Update user role to include both tenant and landlord
+  const user = accommodation.ownerId;
+  if (user && !user.role.includes("landlord")) {
+    user.role.push("landlord");
+    await user.save();
+  }
 
   res.status(200).json({
     status: "success",
@@ -800,7 +805,9 @@ exports.getUserDetails = catchAsync(async (req, res, next) => {
 
   // Get user's posts with approval info
   const posts = await Post.find({ userId: user._id })
-    .select("title status featuredType isAutoApproved approvalType createdAt rent")
+    .select(
+      "title status featuredType isAutoApproved approvalType createdAt rent"
+    )
     .sort({ createdAt: -1 })
     .limit(5);
 
@@ -905,7 +912,7 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
       $match: {
         createdAt: { $gte: defaultStartDate, $lte: defaultEndDate },
         featuredType: { $ne: "THUONG" },
-        isPaid: true
+        isPaid: true,
       },
     },
     {
@@ -916,31 +923,19 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
         avgPostCost: { $avg: "$featuredCost" },
         autoApprovedPosts: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              1,
-              0
-            ]
-          }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, 1, 0],
+          },
         },
         autoApprovedRevenue: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              "$featuredCost",
-              0
-            ]
-          }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, "$featuredCost", 0],
+          },
         },
         manualApprovedRevenue: {
           $sum: {
-            $cond: [
-              { $ne: ["$isAutoApproved", true] },
-              "$featuredCost",
-              0
-            ]
-          }
-        }
+            $cond: [{ $ne: ["$isAutoApproved", true] }, "$featuredCost", 0],
+          },
+        },
       },
     },
   ]);
@@ -951,7 +946,7 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
       $match: {
         createdAt: { $gte: defaultStartDate, $lte: defaultEndDate },
         featuredType: { $ne: "THUONG" },
-        isPaid: true
+        isPaid: true,
       },
     },
     {
@@ -964,22 +959,14 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
         monthlyRevenue: { $sum: "$featuredCost" },
         autoApprovedCount: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              1,
-              0
-            ]
-          }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, 1, 0],
+          },
         },
         autoApprovedRevenue: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              "$featuredCost",
-              0
-            ]
-          }
-        }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, "$featuredCost", 0],
+          },
+        },
       },
     },
     {
@@ -1040,7 +1027,7 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
     {
       $match: {
         featuredType: { $ne: "THUONG" },
-        isPaid: true
+        isPaid: true,
       },
     },
     {
@@ -1051,22 +1038,14 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
         avgCost: { $avg: "$featuredCost" },
         autoApprovedCount: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              1,
-              0
-            ]
-          }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, 1, 0],
+          },
         },
         autoApprovedRevenue: {
           $sum: {
-            $cond: [
-              { $eq: ["$isAutoApproved", true] },
-              "$featuredCost",
-              0
-            ]
-          }
-        }
+            $cond: [{ $eq: ["$isAutoApproved", true] }, "$featuredCost", 0],
+          },
+        },
       },
     },
     {
@@ -1080,7 +1059,7 @@ exports.getRevenueReport = catchAsync(async (req, res, next) => {
     avgPostCost: 0,
     autoApprovedPosts: 0,
     autoApprovedRevenue: 0,
-    manualApprovedRevenue: 0
+    manualApprovedRevenue: 0,
   };
 
   const accommodationStatistics = accommodationStats[0] || {
@@ -1122,22 +1101,22 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
     approvalStatus: "approved",
   });
   const totalRooms = await Room.countDocuments();
-  
+
   // Enhanced post statistics with auto-approval
   const totalPosts = await Post.countDocuments();
   const pendingPosts = await Post.countDocuments({ status: "pending" });
   const approvedPosts = await Post.countDocuments({ status: "approved" });
-  
+
   // NEW: Auto-approval statistics
-  const autoApprovedPosts = await Post.countDocuments({ 
+  const autoApprovedPosts = await Post.countDocuments({
     status: "approved",
-    isAutoApproved: true 
+    isAutoApproved: true,
   });
   const manualApprovedPosts = approvedPosts - autoApprovedPosts;
-  
-  const vipPosts = await Post.countDocuments({ 
-    featuredType: { $ne: "THUONG" }, 
-    isPaid: true 
+
+  const vipPosts = await Post.countDocuments({
+    featuredType: { $ne: "THUONG" },
+    isPaid: true,
   });
 
   // Get recent activities (last 7 days)
@@ -1158,7 +1137,7 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
   // NEW: Recent auto-approvals
   const recentAutoApprovals = await Post.countDocuments({
     createdAt: { $gte: sevenDaysAgo },
-    isAutoApproved: true
+    isAutoApproved: true,
   });
 
   // Get latest pending accommodations
@@ -1175,22 +1154,26 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
     status: "pending",
     $or: [
       { featuredType: "THUONG" }, // Free posts
-      { isAutoApproved: { $ne: true } } // Or posts that weren't auto-approved
-    ]
+      { isAutoApproved: { $ne: true } }, // Or posts that weren't auto-approved
+    ],
   })
     .populate("userId", "name email")
     .sort({ createdAt: -1 })
     .limit(5)
-    .select("title featuredType createdAt userId address.district rent isAutoApproved");
+    .select(
+      "title featuredType createdAt userId address.district rent isAutoApproved"
+    );
 
   // NEW: Get latest auto-approved posts for monitoring
   const latestAutoApprovedPosts = await Post.find({
-    isAutoApproved: true
+    isAutoApproved: true,
   })
     .populate("userId", "name email")
     .sort({ approvalDate: -1 })
     .limit(5)
-    .select("title featuredType approvalDate userId address.district rent featuredCost");
+    .select(
+      "title featuredType approvalDate userId address.district rent featuredCost"
+    );
 
   // Get latest users
   const latestUsers = await User.find()
@@ -1199,7 +1182,10 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
     .select("name email role createdAt isActive isVerified");
 
   // Calculate auto-approval efficiency
-  const autoApprovalRate = approvedPosts > 0 ? Math.round((autoApprovedPosts / approvedPosts) * 100) : 0;
+  const autoApprovalRate =
+    approvedPosts > 0
+      ? Math.round((autoApprovedPosts / approvedPosts) * 100)
+      : 0;
 
   res.status(200).json({
     status: "success",
@@ -1222,7 +1208,7 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
         recentAccommodations,
         recentPosts,
         recentAutoApprovals, // NEW
-        autoApprovalRate // NEW
+        autoApprovalRate, // NEW
       },
       latestPendingAccommodations,
       latestPendingPosts,
@@ -1231,6 +1217,3 @@ exports.getDashboardOverview = catchAsync(async (req, res, next) => {
     },
   });
 });
-
-
-
