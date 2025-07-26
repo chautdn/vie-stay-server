@@ -239,6 +239,9 @@ exports.login = catchAsync(async (req, res, next) => {
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return next(new AppError("Incorrect email or password", 401));
   }
+  if (!user.isVerified) {
+    return next(new AppError("Please verify your email before logging in", 403));
+  }
 
   if (!user.isActive) {
     return next(new AppError("You are banned from our website", 403));
@@ -379,19 +382,22 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
 exports.protect = catchAsync(async (req, res, next) => {
   let token;
 
-  // Check for token in Authorization header first (for API requests)
+  console.log("Headers:", req.headers); // Debug headers
+  console.log("Cookies:", req.cookies); // Debug cookies
+
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
-  }
-  // Fallback to cookie for browser requests
-  else if (req.cookies && req.cookies.jwt) {
+    console.log("Token from header:", token);
+  } else if (req.cookies && req.cookies.jwt) {
     token = req.cookies.jwt;
+    console.log("Token from cookie:", token);
   }
 
   if (!token) {
+    console.log("No token found");
     return next(
       new AppError(
         "You are not logged in! Please log in to access this resource.",
@@ -401,22 +407,22 @@ exports.protect = catchAsync(async (req, res, next) => {
   }
 
   try {
-    // Verify the token
     const decoded = await promisify(jwt.verify)(
       token,
       process.env.ACCESS_TOKEN_SECRET
     );
+    console.log("Decoded token:", decoded); // Debug decoded token
 
-    // Check if user still exists
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {
+      console.log("User not found for ID:", decoded.id);
       return next(
         new AppError("The user belonging to this token no longer exists.", 401)
       );
     }
 
-    // Check if user is verified
     if (!currentUser.isVerified) {
+      console.log("User not verified:", currentUser.email);
       return next(
         new AppError(
           "Please verify your email before accessing this resource.",
@@ -425,10 +431,10 @@ exports.protect = catchAsync(async (req, res, next) => {
       );
     }
 
-    // Grant access to protected route
     req.user = currentUser;
     next();
   } catch (error) {
+    console.error("Token verification error:", error.message);
     if (error.name === "JsonWebTokenError") {
       return next(new AppError("Invalid token! Please log in again.", 401));
     } else if (error.name === "TokenExpiredError") {
