@@ -59,51 +59,6 @@ const utilityReadingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: [true, 'Reader ID is required']
-  },
-  notes: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Notes cannot exceed 500 characters']
-  },
-  images: [{
-    type: String,
-    match: [/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i, 'Please provide valid image URLs']
-  }],
-  meterSerialNumber: {
-    type: String,
-    trim: true,
-    maxlength: [50, 'Meter serial number cannot exceed 50 characters']
-  },
-  isEstimated: {
-    type: Boolean,
-    default: false
-  },
-  estimationReason: {
-    type: String,
-    trim: true,
-    maxlength: [200, 'Estimation reason cannot exceed 200 characters']
-  },
-  verifiedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  verifiedAt: {
-    type: Date
-  },
-  isDisputed: {
-    type: Boolean,
-    default: false
-  },
-  disputeReason: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Dispute reason cannot exceed 500 characters']
-  },
-  disputedAt: {
-    type: Date
-  },
-  resolvedAt: {
-    type: Date
   }
 }, {
   timestamps: true,
@@ -111,49 +66,11 @@ const utilityReadingSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes
-utilityReadingSchema.index({ roomId: 1 });
-utilityReadingSchema.index({ tenantId: 1 });
+// Essential indexes
 utilityReadingSchema.index({ tenancyId: 1 });
 utilityReadingSchema.index({ utilityType: 1 });
 utilityReadingSchema.index({ readingDate: 1 });
-utilityReadingSchema.index({ readBy: 1 });
-
-// Compound indexes
-utilityReadingSchema.index({ roomId: 1, utilityType: 1, readingDate: 1 });
-utilityReadingSchema.index({ tenancyId: 1, utilityType: 1 });
-
-// Virtual for tenant details
-utilityReadingSchema.virtual('tenant', {
-  ref: 'User',
-  localField: 'tenantId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for room details
-utilityReadingSchema.virtual('room', {
-  ref: 'Room',
-  localField: 'roomId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for reader details
-utilityReadingSchema.virtual('reader', {
-  ref: 'User',
-  localField: 'readBy',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Virtual for verifier details
-utilityReadingSchema.virtual('verifier', {
-  ref: 'User',
-  localField: 'verifiedBy',
-  foreignField: '_id',
-  justOne: true
-});
+utilityReadingSchema.index({ tenancyId: 1, utilityType: 1, readingDate: -1 });
 
 // Pre-save middleware to calculate consumption
 utilityReadingSchema.pre('save', function(next) {
@@ -163,28 +80,6 @@ utilityReadingSchema.pre('save', function(next) {
   }
   next();
 });
-
-// Instance method to verify reading
-utilityReadingSchema.methods.verify = function(verifierId) {
-  this.verifiedBy = verifierId;
-  this.verifiedAt = new Date();
-  return this.save();
-};
-
-// Instance method to dispute reading
-utilityReadingSchema.methods.dispute = function(reason) {
-  this.isDisputed = true;
-  this.disputeReason = reason;
-  this.disputedAt = new Date();
-  return this.save();
-};
-
-// Instance method to resolve dispute
-utilityReadingSchema.methods.resolveDispute = function() {
-  this.isDisputed = false;
-  this.resolvedAt = new Date();
-  return this.save();
-};
 
 // Instance method to calculate cost
 utilityReadingSchema.methods.calculateCost = async function() {
@@ -206,108 +101,12 @@ utilityReadingSchema.methods.calculateCost = async function() {
   return 0;
 };
 
-// Static method to find readings by room and period
-utilityReadingSchema.statics.findByRoomAndPeriod = function(roomId, startDate, endDate, utilityType = null) {
-  const query = {
-    roomId,
-    readingDate: {
-      $gte: startDate,
-      $lte: endDate
-    }
-  };
-  
-  if (utilityType) {
-    query.utilityType = utilityType;
-  }
-  
-  return this.find(query).sort({ readingDate: 1 });
-};
-
-// Static method to find latest reading for room and utility type
-utilityReadingSchema.statics.findLatestReading = function(roomId, utilityType) {
+// Static method to find latest reading for tenancy and utility type
+utilityReadingSchema.statics.findLatestReading = function(tenancyId, utilityType) {
   return this.findOne({
-    roomId,
+    tenancyId,
     utilityType
   }).sort({ readingDate: -1 });
-};
-
-// Static method to find readings for billing period
-utilityReadingSchema.statics.findForBilling = function(tenancyId, startDate, endDate) {
-  return this.find({
-    tenancyId,
-    readingDate: {
-      $gte: startDate,
-      $lte: endDate
-    }
-  }).sort({ utilityType: 1, readingDate: 1 });
-};
-
-// Static method to calculate consumption for period
-utilityReadingSchema.statics.calculateConsumption = function(roomId, utilityType, startDate, endDate) {
-  return this.aggregate([
-    {
-      $match: {
-        roomId: new mongoose.Types.ObjectId(roomId),
-        utilityType,
-        readingDate: {
-          $gte: startDate,
-          $lte: endDate
-        }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        totalConsumption: { $sum: '$consumption' },
-        readingCount: { $sum: 1 },
-        averageDaily: { $avg: '$consumption' }
-      }
-    }
-  ]);
-};
-
-// Static method to find disputed readings
-utilityReadingSchema.statics.findDisputed = function() {
-  return this.find({ isDisputed: true }).sort({ disputedAt: -1 });
-};
-
-// Static method to find unverified readings
-utilityReadingSchema.statics.findUnverified = function() {
-  return this.find({ 
-    verifiedBy: { $exists: false },
-    isEstimated: false 
-  }).sort({ readingDate: 1 });
-};
-
-// Static method to generate monthly report
-utilityReadingSchema.statics.generateMonthlyReport = function(roomId, year, month) {
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0);
-  
-  return this.aggregate([
-    {
-      $match: {
-        roomId: new mongoose.Types.ObjectId(roomId),
-        readingDate: {
-          $gte: startDate,
-          $lte: endDate
-        }
-      }
-    },
-    {
-      $group: {
-        _id: '$utilityType',
-        totalConsumption: { $sum: '$consumption' },
-        readingCount: { $sum: 1 },
-        estimatedReadings: {
-          $sum: { $cond: ['$isEstimated', 1, 0] }
-        },
-        disputedReadings: {
-          $sum: { $cond: ['$isDisputed', 1, 0] }
-        }
-      }
-    }
-  ]);
 };
 
 module.exports = mongoose.model('UtilityReading', utilityReadingSchema);

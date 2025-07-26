@@ -149,7 +149,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: [String],
       enum: {
-        values: ["tenant", "landlord", "admin", "co-tenant"], //co-tenant là người thuê chung phòng
+        values: ["tenant", "landlord", "admin", "co-tenant"], 
         message: "Role must be tenant, landlord, or admin",
       },
       default: ["tenant"],
@@ -198,7 +198,6 @@ const userSchema = new mongoose.Schema(
 
 // ✅ SỬA: Chỉ define indexes một lần ở đây
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
 
 // ✅ Virtual to check if user can withdraw (has complete and verified bank account)
 userSchema.virtual("canWithdraw").get(function () {

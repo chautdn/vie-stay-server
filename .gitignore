@@ -31,3 +31,6 @@ dist-ssr
 .env.development
 .env.test
 .env.production
+
+.CLAUDE.md
+.claude/agents/code-architect.md

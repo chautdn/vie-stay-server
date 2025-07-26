@@ -32,7 +32,7 @@ const transactionSchema = new mongoose.Schema(
     transactionId: {
       type: String,
       unique: true,
-      sparse: true, // ✅ Cho phép null để không conflict với data cũ
+      sparse: true, 
     },
     relatedPayment: {
       type: mongoose.Schema.Types.ObjectId,
