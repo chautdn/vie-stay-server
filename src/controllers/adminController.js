@@ -617,11 +617,12 @@ exports.getAccommodationDetails = catchAsync(async (req, res, next) => {
 });
 
 // Approve accommodation
+// Approve accommodation - Updated to add landlord role
 exports.approveAccommodation = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { notes } = req.body;
 
-  const accommodation = await Accommodation.findById(id);
+  const accommodation = await Accommodation.findById(id).populate("ownerId");
   if (!accommodation) {
     return next(new AppError("Accommodation not found", 404));
   }
@@ -632,10 +633,12 @@ exports.approveAccommodation = catchAsync(async (req, res, next) => {
 
   await accommodation.approve(req.user._id);
 
-  // Log the action
-  console.log(
-    `Admin ${req.user.name} approved accommodation ${accommodation.name}`
-  );
+  // Update user role to include both tenant and landlord
+  const user = accommodation.ownerId;
+  if (user && !user.role.includes("landlord")) {
+    user.role.push("landlord");
+    await user.save();
+  }
 
   res.status(200).json({
     status: "success",
@@ -643,7 +646,6 @@ exports.approveAccommodation = catchAsync(async (req, res, next) => {
     data: { accommodation },
   });
 });
-
 // Reject accommodation
 exports.rejectAccommodation = catchAsync(async (req, res, next) => {
   const { id } = req.params;

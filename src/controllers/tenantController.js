@@ -1,7 +1,5 @@
-
 const Room = require("../models/Room");
 const catchAsync = require("../utils/catchAsync");
-
 
 // Lấy người thuê hiện tại của phòng từ currentTenant
 exports.getTenantByRoom = async (req, res) => {
@@ -12,7 +10,7 @@ exports.getTenantByRoom = async (req, res) => {
     const room = await Room.findById(roomId).populate({
       path: "currentTenant",
       select:
-        "name email phoneNumber profileImage nationalIdImage role createdAt",
+        "name email phoneNumber profileImage nationalIdFrontImage nationalIdBackImage nationalIdVerified role createdAt",
     });
 
     if (!room) {
@@ -38,7 +36,9 @@ exports.getTenantByRoom = async (req, res) => {
         email: tenant.email,
         phoneNumber: tenant.phoneNumber,
         profileImage: tenant.profileImage,
-        nationalIdImage: tenant.nationalIdImage,
+        nationalIdFrontImage: tenant.nationalIdFrontImage,
+        nationalIdBackImage: tenant.nationalIdBackImage,
+        nationalIdVerified: tenant.nationalIdVerified,
         role: tenant.role,
         isPrimaryTenant: tenant.role.includes("tenant"), // Primary tenant
         isCoTenant: tenant.role.includes("co-tenant"), // Co-tenant
