@@ -90,10 +90,6 @@ if (!fs.existsSync(uploadsDir)) {
 
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
-  // Only log cookies for non-webhook routes to avoid noise
-  if (!req.path.includes("webhook")) {
-    console.log("Cookies:", req.cookies);
-  }
   next();
 });
 // Test BoldSign connection

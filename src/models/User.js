@@ -149,7 +149,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: [String],
       enum: {
-        values: ["tenant", "landlord", "admin", "co-tenant"], //co-tenant là người thuê chung phòng
+        values: ["tenant", "landlord", "admin", "co-tenant"], 
         message: "Role must be tenant, landlord, or admin",
       },
       default: ["tenant"],
