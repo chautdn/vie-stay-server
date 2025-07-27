@@ -126,9 +126,8 @@ const userSchema = new mongoose.Schema(
         type: String,
         trim: true,
         maxlength: [100, "Branch name cannot exceed 100 characters"],
-        required: false, // Optional
       },
-      isVerified: {
+      isBankAccountVerified: {
         type: Boolean,
         default: false,
         // Admin can verify bank account details when provided

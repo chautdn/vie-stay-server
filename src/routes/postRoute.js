@@ -13,8 +13,13 @@ const {
   incrementContactCount,
   createPostWithPlan,
   searchPosts,
+  deactivatePost,
+  activatePost, // ADD THIS
 } = require("../controllers/postController");
-const { protect } = require("../controllers/authenticateController");
+const {
+  protect,
+  restrictTo,
+} = require("../controllers/authenticateController");
 
 const router = express.Router();
 
@@ -39,5 +44,9 @@ router.delete("/:postId", deletePost); // Delete post
 router.post("/:postId/upgrade", upgradeToFeatured); // Upgrade to featured
 router.post("/:postId/extend", extendFeatured); // Extend featured duration
 router.patch("/:postId/auto-renewal", toggleAutoRenewal); // Toggle auto-renewal
+
+// Admin only routes
+router.patch("/:postId/deactivatePost", restrictTo("admin"), deactivatePost); // Deactivate post
+router.patch("/:postId/activatePost", restrictTo("admin"), activatePost); // ADD THIS
 
 module.exports = router;

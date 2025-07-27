@@ -53,12 +53,12 @@ const uploadToCloudinary = (buffer, filename) => {
 // Helper function to determine post status based on plan
 const getPostStatus = (selectedPlan, isPaid) => {
   // VIP posts that are paid get automatic approval
-  if (selectedPlan !== 'THUONG' && isPaid) {
-    return 'approved';
+  if (selectedPlan !== "THUONG" && isPaid) {
+    return "approved";
   }
-  
+
   // Free posts (THUONG) require manual approval
-  return 'pending';
+  return "pending";
 };
 
 // Create a new post
@@ -212,7 +212,7 @@ const createPost = async (req, res) => {
     }
 
     // Set status for free posts (manual approval required)
-    postData.status = getPostStatus('THUONG', false);
+    postData.status = getPostStatus("THUONG", false);
 
     console.log("Creating post with data:", postData);
 
@@ -222,11 +222,12 @@ const createPost = async (req, res) => {
     console.log("Post created successfully:", post._id);
 
     res.status(201).json({
-      message: post.status === 'approved' 
-        ? "Post created and approved automatically" 
-        : "Post created successfully and is pending approval",
+      message:
+        post.status === "approved"
+          ? "Post created and approved automatically"
+          : "Post created successfully and is pending approval",
       post,
-      requiresApproval: post.status === 'pending'
+      requiresApproval: post.status === "pending",
     });
   } catch (error) {
     console.error("Error creating post:", error);
@@ -247,7 +248,7 @@ const createPostWithPlan = async (req, res) => {
       selectedPlan,
       duration = 7,
       autoRenew = false,
-      autoRenewDuration = 7
+      autoRenewDuration = 7,
     } = req.body;
 
     console.log("Creating post with plan for user:", userId);
@@ -256,18 +257,18 @@ const createPostWithPlan = async (req, res) => {
     // Validate required fields
     if (!postData || !selectedPlan) {
       return res.status(400).json({
-        message: "Post data and plan selection are required"
+        message: "Post data and plan selection are required",
       });
     }
 
     // Determine if this will be a paid post
-    const willBePaid = selectedPlan !== 'THUONG';
-    
+    const willBePaid = selectedPlan !== "THUONG";
+
     // If it's a VIP plan, check wallet balance first
     if (willBePaid) {
       const cost = calculateCost(selectedPlan, duration);
       const user = await User.findById(userId);
-      
+
       if (user.wallet.balance < cost) {
         return res.status(400).json({
           message: "Insufficient wallet balance",
@@ -364,36 +365,36 @@ const createPostWithPlan = async (req, res) => {
 // Helper function to calculate cost
 const calculateCost = (plan, days) => {
   const FEATURED_TYPES = {
-    VIP_NOI_BAT: { 
-      dailyPrice: 50000, 
-      weeklyPrice: 315000, 
-      monthlyPrice: 1500000, 
+    VIP_NOI_BAT: {
+      dailyPrice: 50000,
+      weeklyPrice: 315000,
+      monthlyPrice: 1500000,
     },
-    VIP_1: { 
-      dailyPrice: 30000, 
-      weeklyPrice: 190000, 
-      monthlyPrice: 1200000, 
+    VIP_1: {
+      dailyPrice: 30000,
+      weeklyPrice: 190000,
+      monthlyPrice: 1200000,
     },
-    VIP_2: { 
-      dailyPrice: 20000, 
-      weeklyPrice: 133000, 
-      monthlyPrice: 900000, 
+    VIP_2: {
+      dailyPrice: 20000,
+      weeklyPrice: 133000,
+      monthlyPrice: 900000,
     },
-    VIP_3: { 
-      dailyPrice: 10000, 
-      weeklyPrice: 63000, 
-      monthlyPrice: 800000, 
+    VIP_3: {
+      dailyPrice: 10000,
+      weeklyPrice: 63000,
+      monthlyPrice: 800000,
     },
-    THUONG: { 
-      dailyPrice: 0, 
-      weeklyPrice: 0, 
-      monthlyPrice: 0, 
-    }
+    THUONG: {
+      dailyPrice: 0,
+      weeklyPrice: 0,
+      monthlyPrice: 0,
+    },
   };
 
   const pricing = FEATURED_TYPES[plan];
-  if (!pricing || plan === 'THUONG') return 0;
-  
+  if (!pricing || plan === "THUONG") return 0;
+
   if (days >= 30) {
     return Math.ceil(days / 30) * pricing.monthlyPrice;
   } else if (days >= 7) {
@@ -456,10 +457,17 @@ const getPosts = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const posts = await Post.find(query)
-      .populate("userId", "name profileImage phoneNumber")
-      .populate("roomId", "name roomNumber")
-      .populate("accommodationId", "name type")
+    // Base filter - exclude posts with isAvailable = false from public view
+    const baseFilter = {
+      isAvailable: true, // Only show available posts
+      status: "approved", // Only show approved posts
+    };
+
+    // Merge with other filters
+    const finalFilter = { ...baseFilter, ...query };
+
+    const posts = await Post.find(finalFilter)
+      .populate("userId", "name email phoneNumber")
       .sort({
         featuredType: 1, // Featured posts first
         createdAt: -1, // Newest first
@@ -467,7 +475,7 @@ const getPosts = async (req, res) => {
       .skip(skip)
       .limit(Number(limit));
 
-    const total = await Post.countDocuments(query);
+    const total = await Post.countDocuments(finalFilter);
 
     res.status(200).json({
       posts,
@@ -685,7 +693,7 @@ const upgradeToFeatured = async (req, res) => {
     });
 
     // Store previous status for message
-    const wasApproved = post.status === 'approved';
+    const wasApproved = post.status === "approved";
 
     // Upgrade post (this will auto-approve if it was pending)
     await post.upgradeFeatured(featuredType, duration);
@@ -697,7 +705,7 @@ const upgradeToFeatured = async (req, res) => {
       await post.save();
     }
 
-    const message = wasApproved 
+    const message = wasApproved
       ? "Post upgraded to featured successfully"
       : "Post upgraded to featured and approved automatically";
 
@@ -1049,10 +1057,100 @@ const searchPosts = async (req, res) => {
   }
 };
 
+// Deactivate post
+const deactivatePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { reason } = req.body;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({
+        status: "error",
+        message: "Không tìm thấy bài đăng",
+      });
+    }
+
+    // Set isAvailable = false instead of adminDeactivated = true
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      {
+        isAvailable: false,
+        adminDeactivated: true, // Keep this for admin tracking
+        deactivationReason: reason || "Admin deactivation",
+        deactivatedAt: new Date(),
+        deactivatedBy: req.user._id,
+      },
+      { new: true }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Bài đăng đã được ẩn thành công",
+      data: {
+        post: updatedPost,
+      },
+    });
+  } catch (error) {
+    console.error("Error deactivating post:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Lỗi server khi ẩn bài đăng",
+    });
+  }
+};
+
+// Activate post
+const activatePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({
+        status: "error",
+        message: "Không tìm thấy bài đăng",
+      });
+    }
+
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      {
+        isAvailable: true,
+        adminDeactivated: false,
+        $unset: {
+          deactivationReason: 1,
+          deactivatedAt: 1,
+          deactivatedBy: 1,
+        },
+      },
+      { new: true }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Bài đăng đã được kích hoạt thành công",
+      data: {
+        post: updatedPost,
+      },
+    });
+  } catch (error) {
+    console.error("Error activating post:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Lỗi server khi kích hoạt bài đăng",
+    });
+  }
+};
+
 module.exports = {
   createPost: [upload.array("images", 10), createPost],
   createPostWithPlan, // New endpoint for integrated flow
   getPosts,
+
+  deactivatePost,
+  activatePost,
+
   getUserPosts: async (req, res) => {
     try {
       const userId = req.user._id;

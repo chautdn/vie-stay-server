@@ -1,98 +1,36 @@
+// src/routes/withdrawalRoute.js
 const express = require("express");
-const router = express.Router();
-const withdrawalController = require("../controllers/withdrawalController");
 const {
-  protect,
-  restrictTo,
-} = require("../controllers/authenticateController");
+  checkEligibility,
+  addBankAccount,
+  createWithdrawalRequest,
+  getWithdrawalHistory,
+  getPendingWithdrawals,
+  approveWithdrawal,
+  rejectWithdrawal,
+  verifyBankAccount,
+  getUnverifiedBankAccounts
+} = require("../controllers/withdrawalController");
+const { protect, restrictTo } = require("../controllers/authenticateController");
 
-// ================================
-// PUBLIC ROUTES
-// ================================
+const router = express.Router();
 
-// ✅ VNPay withdrawal return (webhook)
-router.get("/vnpay/return", withdrawalController.handleVNPayReturn);
-
-// ✅ Apply protection middleware
+// Protect all routes
 router.use(protect);
 
-// ================================
-// TENANT ROUTES
-// ================================
+// User routes
+router.get("/check-eligibility", checkEligibility);
+router.post("/bank-account", addBankAccount);
+router.put("/bank-account", addBankAccount); // Allow updates
+router.post("/request", createWithdrawalRequest);
+router.get("/history", getWithdrawalHistory);
 
-// ✅ Tạo yêu cầu rút tiền
-router.post(
-  "/request/:confirmationId",
-  restrictTo("tenant"),
-  withdrawalController.createWithdrawalRequest
-);
-
-// ✅ Xem lịch sử withdrawal
-router.get(
-  "/my-requests",
-  restrictTo("tenant"),
-  withdrawalController.getTenantWithdrawals
-);
-
-// ✅ Hủy withdrawal request
-router.patch(
-  "/cancel/:requestId",
-  restrictTo("tenant"),
-  withdrawalController.cancelWithdrawal
-);
-
-// ================================
-// LANDLORD ROUTES
-// ================================
-
-// ✅ Xem pending withdrawals
-router.get(
-  "/pending",
-  restrictTo("landlord"),
-  withdrawalController.getPendingWithdrawals
-);
-
-// ✅ Approve withdrawal
-router.patch(
-  "/approve/:requestId",
-  restrictTo("landlord"),
-  withdrawalController.approveWithdrawal
-);
-
-// ✅ Reject withdrawal
-router.patch(
-  "/reject/:requestId",
-  restrictTo("landlord"),
-  withdrawalController.rejectWithdrawal
-);
-
-// ================================
-// COMMON ROUTES
-// ================================
-
-// ✅ Check withdrawal status
-router.get(
-  "/status/:requestId",
-  restrictTo("tenant", "landlord"),
-  withdrawalController.checkWithdrawalStatus
-);
-
-// ================================
-// ADMIN ROUTES
-// ================================
-
-// ✅ Get all withdrawals
-router.get(
-  "/admin/all",
-  restrictTo("admin"),
-  withdrawalController.getAllWithdrawals
-);
-
-// ✅ Withdrawal statistics
-router.get(
-  "/admin/stats",
-  restrictTo("admin"),
-  withdrawalController.getWithdrawalStats
-);
+// Admin routes
+router.use(restrictTo("admin"));
+router.get("/pending", getPendingWithdrawals);
+router.put("/:transactionId/approve", approveWithdrawal);
+router.put("/:transactionId/reject", rejectWithdrawal);
+router.put("/verify-bank/:userId", verifyBankAccount);
+router.get("/unverified-bank-accounts", getUnverifiedBankAccounts);
 
 module.exports = router;

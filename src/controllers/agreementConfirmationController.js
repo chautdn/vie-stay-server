@@ -20,7 +20,7 @@ exports.getConfirmationByToken = async (req, res) => {
       data: confirmation,
     });
   } catch (error) {
-    console.error("❌ Error getting confirmation by token:", error);
+   
     res.status(404).json({
       success: false,
       message: error.message || "Confirmation not found or expired",
@@ -334,7 +334,7 @@ exports.getTenantConfirmations = async (req, res) => {
       data: confirmations,
     });
   } catch (error) {
-    console.error("❌ Error getting tenant confirmations:", error);
+    
     res.status(400).json({
       success: false,
       message: error.message || "Failed to get tenant confirmations",
