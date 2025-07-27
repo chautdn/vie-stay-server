@@ -9,12 +9,6 @@ class AgreementConfirmationService {
   // ✅ Tạo confirmation từ accepted request và gửi email
   async createConfirmationFromAcceptedRequest(rentalRequestId, agreementTerms) {
     try {
-      console.log(
-        "📧 Creating confirmation from accepted request:",
-        rentalRequestId
-      );
-      console.log("Agreement terms:", agreementTerms);
-
       // Lấy thông tin rental request với đầy đủ populate
       const rentalRequest = await RentalRequest.findById(rentalRequestId)
         .populate("tenantId")
@@ -56,19 +50,9 @@ class AgreementConfirmationService {
         status: "pending", // ✅ Chưa confirm
         expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 hours
       };
-
-      console.log(
-        "Creating AgreementConfirmation with data:",
-        confirmationData
-      );
-
       // Tạo confirmation record
       const confirmation = new AgreementConfirmation(confirmationData);
       await confirmation.save();
-
-      console.log("✅ AgreementConfirmation created:", confirmation._id);
-
-      // Chuẩn bị data cho email
       const emailData = {
         tenantName: rentalRequest.tenantId.name,
         landlordName: room.accommodationId.ownerId.name,
@@ -88,9 +72,6 @@ class AgreementConfirmationService {
         rentalRequest.tenantId.email,
         emailData
       );
-
-      console.log("✅ Email sent successfully");
-
       return confirmation;
     } catch (error) {
       console.error("❌ Error creating agreement confirmation:", error);
@@ -144,8 +125,6 @@ class AgreementConfirmationService {
   // ✅ Tenant xác nhận đồng ý hợp đồng
   async confirmAgreement(token, tenantId) {
     try {
-      console.log("✅ Tenant confirming agreement:", tenantId);
-
       const confirmation = await AgreementConfirmation.findOne({
         confirmationToken: token,
         tenantId: tenantId,
@@ -164,8 +143,6 @@ class AgreementConfirmationService {
       confirmation.confirmedAt = new Date();
       await confirmation.save();
 
-      console.log("✅ Agreement confirmed successfully");
-
       return {
         _id: confirmation._id,
         status: confirmation.status,
@@ -182,13 +159,6 @@ class AgreementConfirmationService {
   // ✅ Tenant từ chối hợp đồng
   async rejectAgreement(token, tenantId, reason) {
     try {
-      console.log(
-        "❌ Tenant rejecting agreement:",
-        tenantId,
-        "Reason:",
-        reason
-      );
-
       const confirmation = await AgreementConfirmation.findOne({
         confirmationToken: token,
         tenantId: tenantId,
@@ -207,9 +177,6 @@ class AgreementConfirmationService {
       confirmation.rejectedAt = new Date();
       confirmation.rejectionReason = reason;
       await confirmation.save();
-
-      console.log("❌ Agreement rejected successfully");
-
       return {
         _id: confirmation._id,
         status: confirmation.status,
@@ -311,8 +278,6 @@ class AgreementConfirmationService {
         confirmation.tenantId.email,
         emailData
       );
-
-      console.log("✅ Confirmation email resent successfully");
       return { message: "Email resent successfully" };
     } catch (error) {
       console.error("❌ Error resending confirmation email:", error);
@@ -382,8 +347,6 @@ class AgreementConfirmationService {
           expiredAt: new Date(),
         }
       );
-
-      console.log(`✅ Expired ${result.modifiedCount} old confirmations`);
       return {
         expired_count: result.modifiedCount,
         message: `${result.modifiedCount} confirmations expired`,
@@ -396,12 +359,6 @@ class AgreementConfirmationService {
   // ✅ THÊM: Update payment status
   async updatePaymentStatus(confirmationId, paymentStatus, paymentId) {
     try {
-      console.log(
-        "📝 Updating payment status for confirmation:",
-        confirmationId
-      );
-      console.log("📝 New status:", paymentStatus);
-
       const updateData = {
         paymentStatus,
       };
@@ -421,8 +378,6 @@ class AgreementConfirmationService {
         throw new Error("Confirmation not found");
       }
 
-      console.log("✅ Payment status updated successfully");
-
       // ✅ THÊM: Nếu payment completed, thêm tenant vào room và tạo tenancy agreement
       if (paymentStatus === "completed") {
         await this.handlePaymentCompleted(confirmation);
@@ -438,18 +393,12 @@ class AgreementConfirmationService {
   // ✅ THÊM: Xử lý khi payment completed
   async handlePaymentCompleted(confirmation) {
     try {
-      console.log(
-        "🎉 Processing completed payment for confirmation:",
-        confirmation._id
-      );
 
       // Chỉ cập nhật payment status
       await AgreementConfirmation.findByIdAndUpdate(confirmation._id, {
         paymentStatus: "completed",
         paidAt: new Date(),
       });
-
-      console.log("✅ Payment status updated successfully");
     } catch (error) {
       console.error("❌ Error in handlePaymentCompleted:", error);
       throw error;
@@ -479,7 +428,6 @@ class AgreementConfirmationService {
       };
 
       await emailService.sendEmail(emailData);
-      console.log("✅ Payment completed email sent successfully");
     } catch (error) {
       console.error("❌ Failed to send payment completed email:", error);
     }

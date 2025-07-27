@@ -6,8 +6,6 @@ const User = require("../models/User");
 
 const createRentalRequest = async (data) => {
   try {
-    console.log("🔍 Service: Creating rental request with data:", data);
-
     // Validate room exists and is available
     const room = await Room.findById(data.roomId).populate("accommodationId");
     if (!room) {
@@ -16,9 +14,6 @@ const createRentalRequest = async (data) => {
     if (!room.isAvailable) {
       throw new Error("Room is not available for rental");
     }
-
-    console.log("🏠 Room found:", room._id, "- Available:", room.isAvailable);
-
     // Validate guest count
     if (data.guestCount > room.capacity) {
       throw new Error(
@@ -42,9 +37,6 @@ const createRentalRequest = async (data) => {
     if (!landlordId) {
       throw new Error("Landlord information not found");
     }
-
-    console.log("👤 Landlord ID:", landlordId);
-
     // Validate proposed start date
     const proposedStartDate = new Date(data.proposedStartDate);
     if (proposedStartDate < new Date().setHours(0, 0, 0, 0)) {
@@ -62,11 +54,7 @@ const createRentalRequest = async (data) => {
       guestCount: parseInt(data.guestCount) || 1,
       status: "pending",
     };
-
-    console.log("📝 Creating request with data:", requestData);
-
     const createdRequest = await RentalRequest.create(requestData);
-    console.log("✅ Request created successfully:", createdRequest._id);
 
     return createdRequest;
   } catch (error) {
@@ -114,7 +102,7 @@ const getRequestsByLandlord = async (
   limit = 10
 ) => {
   try {
-    console.log(`🔍 Getting requests for landlord: ${landlordId}`);
+
 
     let query = { landlordId };
 
@@ -138,8 +126,6 @@ const getRequestsByLandlord = async (
       .limit(limit);
 
     const total = await RentalRequest.countDocuments(query);
-
-    console.log(`✅ Found ${requests.length} requests for landlord`);
 
     return {
       requests,
@@ -258,8 +244,6 @@ const getRequestsByAccommodation = async (
 // ✅ SỬA: getRequestsByRoom
 const getRequestsByRoom = async (roomId, status, page = 1, limit = 10) => {
   try {
-    console.log(`🔍 Getting requests for room: ${roomId}`);
-
     let query = { roomId };
 
     if (status && status !== "all") {

@@ -173,7 +173,6 @@ class PaymentService {
         status: "pending",
       };
     } catch (error) {
-      console.error("Error creating deposit payment:", error.message);
       throw error;
     }
   }
@@ -193,7 +192,6 @@ class PaymentService {
       const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
 
       if (secureHash !== signed) {
-        console.log("❌ Invalid signature");
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=97`,
@@ -225,7 +223,6 @@ class PaymentService {
       });
 
       if (!payment) {
-        console.log("❌ Payment not found for transactionId:", transactionId);
         return {
           success: false,
           redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=transaction_not_found`,
@@ -305,9 +302,6 @@ class PaymentService {
             redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/success?transactionId=${transactionId}&amount=${payment.amount}&confirmationId=${payment.agreementConfirmationId._id}&warning=contract_failed`,
           };
         }
-
-        console.log("✅ Tenancy agreement created and tenant added to room");
-        console.log("Room update result:", result.roomUpdate);
 
         return {
           success: true,
@@ -423,12 +417,6 @@ class PaymentService {
         },
         { new: true }
       );
-
-      console.log(`✅ Transferred ${depositAmount} VND to landlord wallet:`, {
-        landlordId: landlordId,
-        newBalance: landlordUpdate.wallet.balance,
-        transactionId: transaction._id,
-      });
 
       // ✅ THÊM: Trigger frontend update thông qua custom event
       // (Sẽ được xử lý ở payment success page)
@@ -793,14 +781,7 @@ class PaymentService {
           },
         },
       };
-
-      console.log("📧 Sending contract completed email to:", {
-        to: emailData.to,
-        cc: emailData.cc,
-      });
-
       await emailService.sendEmail(emailData);
-      console.log("✅ Contract completed email sent successfully");
     } catch (error) {
       console.error("❌ Error sending contract completed email:", error);
       throw error;
