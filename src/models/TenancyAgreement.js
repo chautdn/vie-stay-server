@@ -1,3 +1,4 @@
+// models/TenancyAgreement.js
 const mongoose = require("mongoose");
 
 const tenancyAgreementSchema = new mongoose.Schema(
@@ -207,6 +208,5 @@ tenancyAgreementSchema.index({ status: 1 });
 // Compound indexes
 tenancyAgreementSchema.index({ roomId: 1, status: 1 });
 tenancyAgreementSchema.index({ tenantId: 1, status: 1 });
-
 
 module.exports = mongoose.model("TenancyAgreement", tenancyAgreementSchema);

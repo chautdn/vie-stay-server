@@ -20,6 +20,10 @@ const paymentRoutes = require("./src/routes/payment");
 const ReportRouter = require("./src/routes/reportRoute");
 const PostRouter = require("./src/routes/postRoute");
 const TransactionRouter = require("./src/routes/transactionRoute");
+const RoomOccupancyRouter = require("./src/routes/roomOccupancyRoute");
+const BillRouter = require("./src/routes/billRoute");
+const BillPaymentRouter = require("./src/routes/billPaymentRoute");
+const WalletRouter = require("./src/routes/walletRoute");
 require("dotenv").config({ path: "./config.env" });
 
 const app = express();
@@ -118,6 +122,10 @@ app.use("/api/payment", paymentRoutes);
 console.log("Payment routes mounted at /api/payment");
 app.use("/api/transactions", TransactionRouter);
 app.use("/api/reports", ReportRouter); // Report routes
+app.use("/api/room-occupancy", RoomOccupancyRouter);  
+app.use("/api/bills", BillRouter);                     
+app.use("/api/bill-payments", BillPaymentRouter);      
+app.use("/api/wallet", WalletRouter);                  
 app.use(handleError);
 
 connectDB();

@@ -39,8 +39,31 @@ const transactionSchema = new mongoose.Schema(
       ref: "Payment",
     },
     message: String,
+    // Additional fields for wallet functionality (non-breaking additions)
+    balanceBefore: {
+      type: Number,
+      min: [0, "Balance before cannot be negative"],
+    },
+    balanceAfter: {
+      type: Number,
+      min: [0, "Balance after cannot be negative"],
+    },
+    relatedBill: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Bill",
+    },
+    relatedBillPayment: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BillPayment",
+    },
   },
   { timestamps: true }
 );
+
+// Indexes
+transactionSchema.index({ user: 1, createdAt: -1 });
+transactionSchema.index({ type: 1, status: 1 });
+transactionSchema.index({ relatedBill: 1 });
+transactionSchema.index({ relatedBillPayment: 1 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

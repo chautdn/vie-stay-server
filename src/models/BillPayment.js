@@ -1,4 +1,4 @@
-// models/BillPayment.js - Track payments for bills
+// models/BillPayment.js
 const mongoose = require("mongoose");
 
 const billPaymentSchema = new mongoose.Schema(
@@ -129,31 +129,5 @@ billPaymentSchema.post("save", async function() {
     }
   }
 });
-
-// Instance method to process payment
-billPaymentSchema.methods.processPayment = async function() {
-  this.status = "completed";
-  this.paidAt = new Date();
-  return await this.save();
-};
-
-// Instance method to refund payment
-billPaymentSchema.methods.refundPayment = async function(reason) {
-  this.status = "refunded";
-  this.notes = this.notes ? `${this.notes}. Refunded: ${reason}` : `Refunded: ${reason}`;
-  return await this.save();
-};
-
-// Static method to find payments by bill
-billPaymentSchema.statics.findByBill = function(billId) {
-  return this.find({ billId }).populate("payerId", "name email").sort({ createdAt: -1 });
-};
-
-// Static method to find payments by payer
-billPaymentSchema.statics.findByPayer = function(payerId, status = null) {
-  const query = { payerId };
-  if (status) query.status = status;
-  return this.find(query).populate("billId").sort({ createdAt: -1 });
-};
 
 module.exports = mongoose.model("BillPayment", billPaymentSchema);

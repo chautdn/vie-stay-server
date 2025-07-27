@@ -1,4 +1,4 @@
-// models/Bill.js - Flexible billing system
+// models/Bill.js
 const mongoose = require("mongoose");
 
 const billItemSchema = new mongoose.Schema({
@@ -218,22 +218,5 @@ billSchema.pre("save", function (next) {
   }
   next();
 });
-
-// Instance method to mark bill as overdue
-billSchema.methods.markAsOverdue = function() {
-  if (this.dueDate < new Date() && this.status === "sent") {
-    this.status = "overdue";
-    return this.save();
-  }
-};
-
-// Static method to find overdue bills
-billSchema.statics.findOverdueBills = function() {
-  return this.find({
-    dueDate: { $lt: new Date() },
-    status: { $in: ["sent", "viewed"] },
-    remainingBalance: { $gt: 0 }
-  });
-};
 
 module.exports = mongoose.model("Bill", billSchema);
