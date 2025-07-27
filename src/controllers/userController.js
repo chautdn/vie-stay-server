@@ -426,7 +426,8 @@ exports.getUserProfile = async (req, res) => {
       role: user.role,
       profileImage: user.profileImage,
       nationalId: user.nationalId,
-      nationalIdImage: user.nationalIdImage,
+      nationalIdFrontImage: user.nationalIdFrontImage,
+      nationalIdBackImage: user.nationalIdBackImage,
       nationalIdVerified: user.nationalIdVerified || false,
       dateOfBirth: user.dateOfBirth,
       address: user.address,
@@ -808,6 +809,20 @@ exports.updateNationalId = catchAsync(async (req, res, next) => {
           ? "CCCD đã được xác thực"
           : "CCCD chưa được xác thực",
       },
+    },
+  });
+});
+exports.getMe = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.user.id);
+
+  if (!user) {
+    return next(new AppError("No user found with that ID", 404));
+  }
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      user,
     },
   });
 });

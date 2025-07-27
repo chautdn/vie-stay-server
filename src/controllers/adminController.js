@@ -648,7 +648,6 @@ exports.approveAccommodation = catchAsync(async (req, res, next) => {
     data: { accommodation },
   });
 });
-
 // Reject accommodation
 exports.rejectAccommodation = catchAsync(async (req, res, next) => {
   const { id } = req.params;

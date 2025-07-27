@@ -112,7 +112,7 @@ const requestCoTenant = async (req, res) => {
       email,
       password: "no-login-required", // Hash bởi middleware
       phoneNumber,
-      nationalIdImage: imageUrl,
+      nationalIdFrontImage: imageUrl,
       role: ["co-tenant"],
       createdAt: new Date(),
       updatedAt: new Date(),
