@@ -73,23 +73,33 @@ const roomOccupancySchema = new mongoose.Schema(
         min: [0, "Electricity rate cannot be negative"],
       },
       // Any additional monthly charges specific to this tenant
-      additionalCharges: [{
-        name: {
-          type: String,
-          required: true,
-          trim: true,
+      additionalCharges: [
+        {
+          name: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          amount: {
+            type: Number,
+            required: true,
+            min: [0, "Additional charge cannot be negative"],
+          },
+          description: {
+            type: String,
+            trim: true,
+          },
         },
-        amount: {
-          type: Number,
-          required: true,
-          min: [0, "Additional charge cannot be negative"],
-        },
-        description: {
-          type: String,
-          trim: true,
-        }
-      }]
-    }
+      ],
+      contractSigned: { type: Boolean, default: false },
+      contractSignedAt: Date,
+      contractDeclined: { type: Boolean, default: false },
+      contractDeclinedAt: Date,
+      tenancyAgreementId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "TenancyAgreement",
+      },
+    },
   },
   {
     timestamps: true,
@@ -107,12 +117,12 @@ roomOccupancySchema.index({ moveOutDate: 1 });
 // Ensure only one representative per active room
 roomOccupancySchema.index(
   { roomId: 1, isRepresentative: 1 },
-  { 
-    unique: true, 
-    partialFilterExpression: { 
-      isRepresentative: true, 
-      status: "active" 
-    } 
+  {
+    unique: true,
+    partialFilterExpression: {
+      isRepresentative: true,
+      status: "active",
+    },
   }
 );
 
@@ -125,36 +135,40 @@ roomOccupancySchema.virtual("durationInDays").get(function () {
 
 // Virtual for current status display
 roomOccupancySchema.virtual("statusDisplay").get(function () {
-  switch(this.status) {
-    case "active": return "Đang ở";
-    case "moved_out": return "Đã chuyển đi";
-    case "terminated": return "Chấm dứt hợp đồng";
-    default: return this.status;
+  switch (this.status) {
+    case "active":
+      return "Đang ở";
+    case "moved_out":
+      return "Đã chuyển đi";
+    case "terminated":
+      return "Chấm dứt hợp đồng";
+    default:
+      return this.status;
   }
 });
 
 // Instance method to calculate total rent paid
-roomOccupancySchema.methods.calculateTotalRent = function() {
+roomOccupancySchema.methods.calculateTotalRent = function () {
   return this.monthlyRent * (this.durationInDays / 30);
 };
 
 // Static method to get room occupancy history
-roomOccupancySchema.statics.getRoomHistory = function(roomId) {
+roomOccupancySchema.statics.getRoomHistory = function (roomId) {
   return this.find({ roomId })
     .populate("tenantId", "name email phoneNumber")
     .sort({ moveInDate: -1 });
 };
 
 // Static method to get tenant's rental history
-roomOccupancySchema.statics.getTenantHistory = function(tenantId) {
+roomOccupancySchema.statics.getTenantHistory = function (tenantId) {
   return this.find({ tenantId })
     .populate("roomId", "roomNumber name")
     .populate({
       path: "roomId",
       populate: {
         path: "accommodationId",
-        select: "name address"
-      }
+        select: "name address",
+      },
     })
     .sort({ moveInDate: -1 });
 };

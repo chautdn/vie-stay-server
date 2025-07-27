@@ -240,7 +240,9 @@ exports.login = catchAsync(async (req, res, next) => {
     return next(new AppError("Incorrect email or password", 401));
   }
   if (!user.isVerified) {
-    return next(new AppError("Please verify your email before logging in", 403));
+    return next(
+      new AppError("Please verify your email before logging in", 403)
+    );
   }
 
   if (!user.isActive) {
@@ -382,18 +384,13 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
 exports.protect = catchAsync(async (req, res, next) => {
   let token;
 
-  console.log("Headers:", req.headers); // Debug headers
-  console.log("Cookies:", req.cookies); // Debug cookies
-
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
-    console.log("Token from header:", token);
   } else if (req.cookies && req.cookies.jwt) {
     token = req.cookies.jwt;
-    console.log("Token from cookie:", token);
   }
 
   if (!token) {
@@ -411,7 +408,6 @@ exports.protect = catchAsync(async (req, res, next) => {
       token,
       process.env.ACCESS_TOKEN_SECRET
     );
-    console.log("Decoded token:", decoded); // Debug decoded token
 
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {

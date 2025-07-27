@@ -426,3 +426,173 @@ exports.getMyRooms = async (req, res) => {
     });
   }
 };
+
+// Modified roomOccupancyController.js - Handle missing occupancy records
+
+// Get all tenants in a room with fallback to room.currentTenant
+exports.getRoomTenants = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view tenants for this room"
+      });
+    }
+    
+    // First try to get tenants from RoomOccupancy
+    const occupancyTenants = await RoomOccupancy.find({
+      roomId,
+      status: "active"
+    })
+    .populate("tenantId", "name email phoneNumber profileImage")
+    .sort({ moveInDate: 1 });
+
+    // If we have occupancy records, return them
+    if (occupancyTenants.length > 0) {
+      return res.status(200).json({
+        success: true,
+        data: occupancyTenants,
+        source: 'occupancy'
+      });
+    }
+
+    // Fallback: If no occupancy records but room has currentTenant
+    if (room.currentTenant && room.currentTenant.length > 0) {
+      console.log(`🔄 Room ${roomId} has ${room.currentTenant.length} currentTenant but no occupancy records`);
+      
+      // Fetch tenant details and create temporary occupancy objects
+      const User = require("../models/User");
+      const tenantDetails = await User.find({
+        _id: { $in: room.currentTenant }
+      }).select("name email phoneNumber profileImage");
+
+      const fallbackTenants = tenantDetails.map((user, index) => ({
+        _id: `temp_${user._id}_${Date.now()}`, // Temporary ID
+        roomId: roomId,
+        tenantId: user,
+        isRepresentative: index === 0, // Make first tenant representative
+        moveInDate: new Date(),
+        status: "active",
+        monthlyRent: room.baseRent,
+        isFallback: true // Flag to indicate this is fallback data
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data: fallbackTenants,
+        source: 'fallback',
+        message: "Using fallback data from room.currentTenant. Consider creating proper occupancy records."
+      });
+    }
+
+    // No tenants found
+    res.status(200).json({
+      success: true,
+      data: [],
+      source: 'empty'
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Add utility function to create occupancy records for existing tenants
+exports.createOccupancyForExistingTenants = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const { roomId } = req.params;
+    
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to manage this room"
+      });
+    }
+
+    if (!room.currentTenant || room.currentTenant.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No current tenants in room"
+      });
+    }
+
+    const created = [];
+    const skipped = [];
+
+    for (let i = 0; i < room.currentTenant.length; i++) {
+      const tenantId = room.currentTenant[i];
+      
+      // Check if occupancy record already exists
+      const existingOccupancy = await RoomOccupancy.findOne({
+        roomId,
+        tenantId,
+        status: "active"
+      });
+
+      if (existingOccupancy) {
+        skipped.push(tenantId);
+        continue;
+      }
+
+      // Create new occupancy record
+      const occupancy = new RoomOccupancy({
+        roomId,
+        tenantId,
+        isRepresentative: i === 0, // First tenant becomes representative
+        moveInDate: new Date(),
+        monthlyRent: room.baseRent,
+        status: "active"
+      });
+
+      await occupancy.save({ session });
+      created.push(tenantId);
+    }
+
+    await session.commitTransaction();
+
+    res.status(200).json({
+      success: true,
+      message: `Created ${created.length} occupancy records, skipped ${skipped.length} existing records`,
+      data: {
+        created: created.length,
+        skipped: skipped.length,
+        total: room.currentTenant.length
+      }
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  } finally {
+    session.endSession();
+  }
+};
