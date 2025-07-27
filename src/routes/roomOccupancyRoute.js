@@ -24,8 +24,18 @@ router
   .route("/room/:roomId/representative/:tenantId")
   .put(restrictTo("landlord", "admin"), roomOccupancyController.setRepresentative);
 
+// Get history - can be for a specific room (landlord) or for requesting tenant
 router
-  .route("/tenant/:tenantId/history")
+  .route("/room/:roomId/history")
   .get(roomOccupancyController.getTenantHistory);
+
+router
+  .route("/tenant/history")
+  .get(restrictTo("tenant", "co-tenant"), roomOccupancyController.getTenantHistory);
+
+// Get rooms where user is a tenant
+router
+  .route("/my-rooms")
+  .get(restrictTo("tenant", "co-tenant"), roomOccupancyController.getMyRooms);
 
 module.exports = router;

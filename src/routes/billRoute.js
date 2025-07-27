@@ -1,3 +1,4 @@
+// src/routes/billRoute.js
 const express = require("express");
 const router = express.Router();
 const billController = require("../controllers/billController");
@@ -6,13 +7,9 @@ const { protect, restrictTo } = require("../controllers/authenticateController")
 // Protect all routes
 router.use(protect);
 
-// Bill management routes
+// Bill management routes - only custom bills now
 router
-  .route("/room/:roomId/monthly")
-  .post(restrictTo("landlord", "admin"), billController.createMonthlyBill);
-
-router
-  .route("/room/:roomId/custom")
+  .route("/room/:roomId/create")
   .post(restrictTo("landlord", "admin"), billController.createCustomBill);
 
 router

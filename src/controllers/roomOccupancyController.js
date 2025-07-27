@@ -1,7 +1,6 @@
 // src/controllers/roomOccupancyController.js
 const RoomOccupancy = require("../models/RoomOccupancy");
 const Room = require("../models/Room");
-const TenancyAgreement = require("../models/TenancyAgreement");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 
@@ -10,12 +9,27 @@ exports.getRoomTenants = async (req, res) => {
   try {
     const { roomId } = req.params;
     
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view tenants for this room"
+      });
+    }
+    
     const tenants = await RoomOccupancy.find({
       roomId,
       status: "active"
     })
     .populate("tenantId", "name email phoneNumber profileImage")
-    .populate("tenancyAgreementId", "monthlyRent startDate endDate")
     .sort({ moveInDate: 1 });
 
     res.status(200).json({
@@ -33,14 +47,37 @@ exports.getRoomTenants = async (req, res) => {
 // Get tenant's room history
 exports.getTenantHistory = async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    const { roomId } = req.params;
     
-    const history = await RoomOccupancy.find({
-      tenantId
-    })
-    .populate("roomId", "roomNumber name")
-    .populate("tenancyAgreementId", "monthlyRent")
-    .sort({ moveInDate: -1 });
+    // If roomId is provided, get history for that specific room
+    let query = {};
+    if (roomId) {
+      // Verify room ownership
+      const room = await Room.findById(roomId).populate("accommodationId");
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: "Room not found"
+        });
+      }
+
+      if (room.accommodationId.ownerId.toString() !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: "Not authorized to view history for this room"
+        });
+      }
+      
+      query.roomId = roomId;
+    } else {
+      // Get history for the requesting tenant
+      query.tenantId = req.user.id;
+    }
+    
+    const history = await RoomOccupancy.find(query)
+      .populate("roomId", "roomNumber name")
+      .populate("tenantId", "name email phoneNumber")
+      .sort({ moveInDate: -1 });
 
     res.status(200).json({
       success: true,
@@ -54,14 +91,20 @@ exports.getTenantHistory = async (req, res) => {
   }
 };
 
-// Add tenant to room
+// Add tenant to room (simplified without tenancy agreement)
 exports.addTenantToRoom = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   
   try {
     const { roomId } = req.params;
-    const { tenantId, tenancyAgreementId, isRepresentative = false } = req.body;
+    const { 
+      tenantEmail, 
+      tenantId, 
+      isRepresentative = false,
+      monthlyRent,
+      moveInDate
+    } = req.body;
     
     // Verify room exists and user is landlord
     const room = await Room.findById(roomId).populate("accommodationId");
@@ -72,19 +115,40 @@ exports.addTenantToRoom = async (req, res) => {
       });
     }
 
-    // Verify tenancy agreement
-    const tenancy = await TenancyAgreement.findById(tenancyAgreementId);
-    if (!tenancy || tenancy.roomId.toString() !== roomId) {
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to manage this room"
+      });
+    }
+
+    // Find tenant by ID or email
+    let tenant;
+    if (tenantId) {
+      tenant = await User.findById(tenantId);
+    } else if (tenantEmail) {
+      tenant = await User.findOne({ email: tenantEmail });
+    }
+
+    if (!tenant) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found"
+      });
+    }
+
+    // Validate tenant role
+    if (!tenant.role || !['tenant', 'co-tenant'].includes(tenant.role)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid tenancy agreement"
+        message: "User is not registered as a tenant"
       });
     }
 
     // Check if tenant already in room
     const existingOccupancy = await RoomOccupancy.findOne({
       roomId,
-      tenantId,
+      tenantId: tenant._id,
       status: "active"
     });
 
@@ -92,6 +156,19 @@ exports.addTenantToRoom = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Tenant already in this room"
+      });
+    }
+
+    // Check room capacity
+    const currentTenants = await RoomOccupancy.countDocuments({
+      roomId,
+      status: "active"
+    });
+
+    if (currentTenants >= room.capacity) {
+      return res.status(400).json({
+        success: false,
+        message: "Room is at full capacity"
       });
     }
 
@@ -107,17 +184,18 @@ exports.addTenantToRoom = async (req, res) => {
     // Create occupancy record
     const occupancy = new RoomOccupancy({
       roomId,
-      tenantId,
-      tenancyAgreementId,
+      tenantId: tenant._id,
       isRepresentative,
-      moveInDate: new Date()
+      moveInDate: moveInDate ? new Date(moveInDate) : new Date(),
+      monthlyRent: monthlyRent || room.baseRent, // Store rent at time of move-in
+      status: "active"
     });
 
     await occupancy.save({ session });
 
     // Update room currentTenant array
-    if (!room.currentTenant.includes(tenantId)) {
-      room.currentTenant.push(tenantId);
+    if (!room.currentTenant.includes(tenant._id)) {
+      room.currentTenant.push(tenant._id);
       await room.save({ session });
     }
 
@@ -125,7 +203,7 @@ exports.addTenantToRoom = async (req, res) => {
 
     const populatedOccupancy = await RoomOccupancy.findById(occupancy._id)
       .populate("tenantId", "name email phoneNumber")
-      .populate("tenancyAgreementId", "monthlyRent startDate endDate");
+      .populate("roomId", "roomNumber name");
 
     res.status(201).json({
       success: true,
@@ -151,7 +229,23 @@ exports.removeTenantFromRoom = async (req, res) => {
   
   try {
     const { roomId, tenantId } = req.params;
-    const { terminationReason } = req.body;
+    const { terminationReason, moveOutDate } = req.body;
+    
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to manage this room"
+      });
+    }
     
     // Find occupancy record
     const occupancy = await RoomOccupancy.findOne({
@@ -171,13 +265,12 @@ exports.removeTenantFromRoom = async (req, res) => {
 
     // Update occupancy status
     occupancy.status = "moved_out";
-    occupancy.moveOutDate = new Date();
+    occupancy.moveOutDate = moveOutDate ? new Date(moveOutDate) : new Date();
     occupancy.terminationReason = terminationReason;
     occupancy.terminatedBy = req.user.id;
     await occupancy.save({ session });
 
     // Remove from room's currentTenant array
-    const room = await Room.findById(roomId);
     room.currentTenant = room.currentTenant.filter(id => id.toString() !== tenantId);
     await room.save({ session });
 
@@ -220,6 +313,22 @@ exports.setRepresentative = async (req, res) => {
   
   try {
     const { roomId, tenantId } = req.params;
+    
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to manage this room"
+      });
+    }
     
     // Remove representative status from all tenants in room
     await RoomOccupancy.updateMany(
@@ -281,6 +390,34 @@ exports.getRoomRepresentative = async (req, res) => {
     res.status(200).json({
       success: true,
       data: representative
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Get rooms where user is a tenant (for tenant dashboard)
+exports.getMyRooms = async (req, res) => {
+  try {
+    const occupancies = await RoomOccupancy.find({
+      tenantId: req.user.id,
+      status: "active"
+    })
+    .populate("roomId", "roomNumber name baseRent")
+    .populate({
+      path: "roomId",
+      populate: {
+        path: "accommodationId",
+        select: "name address"
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: occupancies
     });
   } catch (error) {
     res.status(500).json({

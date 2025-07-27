@@ -34,7 +34,7 @@ const billItemSchema = new mongoose.Schema({
     trim: true,
     maxlength: [200, "Description cannot exceed 200 characters"],
   },
-  // For utility items
+  // For utility items - meter readings
   previousReading: {
     type: Number,
     min: [0, "Previous reading cannot be negative"],
@@ -72,7 +72,7 @@ const billSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Representative ID is required"],
     },
-    // All tenants during this billing period
+    // All tenants during this billing period (snapshot)
     tenantsAtTimeOfBilling: [{
       tenantId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -88,7 +88,7 @@ const billSchema = new mongoose.Schema(
         type: Number,
         required: true,
         min: [0, "Days in period cannot be negative"],
-      },
+      }
     }],
     billNumber: {
       type: String,
@@ -166,6 +166,31 @@ const billSchema = new mongoose.Schema(
         type: Date,
       },
     },
+    // Bill type for easier filtering
+    billType: {
+      type: String,
+      enum: {
+        values: ["monthly", "custom", "deposit", "maintenance", "utility"],
+        message: "Please select a valid bill type",
+      },
+      default: "custom",
+    },
+    // For recurring bills
+    isRecurring: {
+      type: Boolean,
+      default: false,
+    },
+    recurringSettings: {
+      frequency: {
+        type: String,
+        enum: ["monthly", "quarterly", "annually"],
+      },
+      nextDueDate: Date,
+      autoGenerate: {
+        type: Boolean,
+        default: false,
+      }
+    }
   },
   {
     timestamps: true,
@@ -181,6 +206,9 @@ billSchema.index({ landlordId: 1 });
 billSchema.index({ billNumber: 1 });
 billSchema.index({ dueDate: 1, status: 1 });
 billSchema.index({ "billingPeriod.from": 1, "billingPeriod.to": 1 });
+billSchema.index({ accommodationId: 1 });
+billSchema.index({ billType: 1 });
+billSchema.index({ isRecurring: 1 });
 
 // Virtual for remaining balance
 billSchema.virtual("remainingBalance").get(function () {
@@ -192,6 +220,17 @@ billSchema.virtual("paymentStatus").get(function () {
   if (this.paidAmount === 0) return "unpaid";
   if (this.paidAmount >= this.totalAmount) return "fully_paid";
   return "partially_paid";
+});
+
+// Virtual for overdue status
+billSchema.virtual("isOverdue").get(function () {
+  return new Date() > this.dueDate && this.status !== "paid";
+});
+
+// Virtual for days overdue
+billSchema.virtual("daysOverdue").get(function () {
+  if (!this.isOverdue) return 0;
+  return Math.ceil((new Date() - this.dueDate) / (1000 * 60 * 60 * 24));
 });
 
 // Auto-generate bill number
@@ -218,5 +257,47 @@ billSchema.pre("save", function (next) {
   }
   next();
 });
+
+// Static method to create quick rent bill
+billSchema.statics.createRentBill = async function(roomId, representativeId, landlordId, accommodationId, period, amount) {
+  const bill = new this({
+    roomId,
+    representativeId,
+    landlordId,
+    accommodationId,
+    billType: "monthly",
+    billingPeriod: period,
+    items: [{
+      name: "Monthly Rent",
+      type: "rent",
+      amount: amount,
+      quantity: 1,
+      unitPrice: amount,
+      description: `Monthly rent for ${new Date(period.from).toLocaleDateString()} - ${new Date(period.to).toLocaleDateString()}`
+    }],
+    dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
+  });
+  
+  return bill.save();
+};
+
+// Instance method to apply late fee
+billSchema.methods.applyLateFee = function(feeAmount) {
+  if (this.isOverdue && this.lateFee.amount === 0) {
+    this.lateFee.amount = feeAmount;
+    this.lateFee.appliedAt = new Date();
+    this.totalAmount += feeAmount;
+    return this.save();
+  }
+  return Promise.resolve(this);
+};
+
+// Static method to get overdue bills
+billSchema.statics.getOverdueBills = function() {
+  return this.find({
+    dueDate: { $lt: new Date() },
+    status: { $nin: ["paid", "cancelled"] }
+  }).populate("representativeId roomId");
+};
 
 module.exports = mongoose.model("Bill", billSchema);

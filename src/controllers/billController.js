@@ -29,198 +29,9 @@ const calculateDaysInPeriod = (fromDate, toDate) => {
   return Math.max(1, Math.ceil((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24)));
 };
 
-// Create monthly bill for room
-exports.createMonthlyBill = async (req, res) => {
-  try {
-    const { roomId } = req.params;
-    const { billingPeriod } = req.body; // { from: Date, to: Date }
-    
-    // Get room and verify landlord ownership
-    const room = await Room.findById(roomId).populate("accommodationId");
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found"
-      });
-    }
+// REMOVED: createMonthlyBill function (no longer needed without tenancy agreements)
 
-    // Get active tenancy agreement
-    const tenancy = await TenancyAgreement.findOne({
-      roomId,
-      status: "active"
-    });
-
-    if (!tenancy) {
-      return res.status(404).json({
-        success: false,
-        message: "No active tenancy agreement found"
-      });
-    }
-
-    // Get representative tenant
-    const representative = await RoomOccupancy.findOne({
-      roomId,
-      status: "active",
-      isRepresentative: true
-    });
-
-    if (!representative) {
-      return res.status(404).json({
-        success: false,
-        message: "No representative tenant found"
-      });
-    }
-
-    // Get all active tenants during billing period
-    const tenantsInPeriod = await RoomOccupancy.find({
-      roomId,
-      status: "active"
-    });
-
-    // Check if bill already exists for this period
-    const existingBill = await Bill.findOne({
-      roomId,
-      "billingPeriod.from": billingPeriod.from,
-      "billingPeriod.to": billingPeriod.to
-    });
-
-    if (existingBill) {
-      return res.status(400).json({
-        success: false,
-        message: "Bill already exists for this period"
-      });
-    }
-
-    // Create bill items based on tenancy agreement
-    const items = [];
-
-    // Add rent
-    items.push({
-      name: "Monthly Rent",
-      type: "rent",
-      amount: tenancy.monthlyRent,
-      quantity: 1,
-      unitPrice: tenancy.monthlyRent,
-      description: `Monthly rent for ${new Date(billingPeriod.from).toLocaleDateString()} - ${new Date(billingPeriod.to).toLocaleDateString()}`
-    });
-
-    // Add utilities if defined in tenancy agreement
-    if (tenancy.utilityRates?.water?.rate) {
-      items.push({
-        name: "Water Service",
-        type: "water",
-        amount: tenancy.utilityRates.water.rate,
-        quantity: 1,
-        unitPrice: tenancy.utilityRates.water.rate,
-        description: "Water utility service"
-      });
-    }
-
-    if (tenancy.utilityRates?.electricity?.rate) {
-      items.push({
-        name: "Electricity Service",
-        type: "electricity",
-        amount: tenancy.utilityRates.electricity.rate,
-        quantity: 1,
-        unitPrice: tenancy.utilityRates.electricity.rate,
-        description: "Electricity utility service"
-      });
-    }
-
-    if (tenancy.utilityRates?.internet?.rate) {
-      items.push({
-        name: "Internet Service",
-        type: "internet",
-        amount: tenancy.utilityRates.internet.rate,
-        quantity: 1,
-        unitPrice: tenancy.utilityRates.internet.rate,
-        description: "Internet service"
-      });
-    }
-
-    if (tenancy.utilityRates?.sanitation?.rate) {
-      items.push({
-        name: "Sanitation Service",
-        type: "sanitation",
-        amount: tenancy.utilityRates.sanitation.rate,
-        quantity: 1,
-        unitPrice: tenancy.utilityRates.sanitation.rate,
-        description: "Sanitation service"
-      });
-    }
-
-    // Add additional monthly fees
-    tenancy.additionalFees?.forEach(fee => {
-      if (fee.type === "monthly") {
-        items.push({
-          name: fee.name.charAt(0).toUpperCase() + fee.name.slice(1),
-          type: fee.name,
-          amount: fee.amount,
-          quantity: 1,
-          unitPrice: fee.amount,
-          description: fee.description || fee.name
-        });
-      }
-    });
-
-    // Set due date (default: 5 days from creation)
-    const dueDate = req.body.dueDate ? new Date(req.body.dueDate) : (() => {
-      const date = new Date();
-      date.setDate(date.getDate() + 5);
-      return date;
-    })();
-
-    // Calculate subtotal and totalAmount
-    const { subtotal, totalAmount } = calculateBillTotals(items);
-
-    // Calculate days in period properly
-    const daysInPeriod = calculateDaysInPeriod(billingPeriod.from, billingPeriod.to);
-
-    // Generate bill number
-    const billNumber = await generateBillNumber();
-
-    // Create bill with all required fields
-    const bill = new Bill({
-      billNumber,
-      roomId,
-      accommodationId: room.accommodationId._id,
-      landlordId: tenancy.landlordId,
-      representativeId: representative.tenantId,
-      tenantsAtTimeOfBilling: tenantsInPeriod.map(occupancy => ({
-        tenantId: occupancy.tenantId,
-        occupancyId: occupancy._id,
-        daysInPeriod
-      })),
-      billingPeriod,
-      items,
-      subtotal,
-      totalAmount,
-      dueDate,
-      status: "draft"
-    });
-
-    await bill.save();
-
-    const populatedBill = await Bill.findById(bill._id)
-      .populate("representativeId", "name email phoneNumber")
-      .populate("roomId", "roomNumber name")
-      .populate("tenantsAtTimeOfBilling.tenantId", "name email");
-
-    res.status(201).json({
-      success: true,
-      message: "Monthly bill created successfully",
-      data: populatedBill
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// Create custom bill
+// Create custom bill (now the only bill creation method)
 exports.createCustomBill = async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -244,12 +55,20 @@ exports.createCustomBill = async (req, res) => {
       }
     }
     
-    // Get room and verify landlord ownership
+    // Get room and verify ownership
     const room = await Room.findById(roomId).populate("accommodationId");
     if (!room) {
       return res.status(404).json({
         success: false,
         message: "Room not found"
+      });
+    }
+
+    // Verify user is the landlord (check ownership through accommodation)
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to create bills for this room"
       });
     }
 
@@ -263,7 +82,7 @@ exports.createCustomBill = async (req, res) => {
     if (!representative) {
       return res.status(404).json({
         success: false,
-        message: "No representative tenant found"
+        message: "No representative tenant found. Please assign a representative first."
       });
     }
 
@@ -272,6 +91,13 @@ exports.createCustomBill = async (req, res) => {
       roomId,
       status: "active"
     });
+
+    if (tenantsInPeriod.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No active tenants in room"
+      });
+    }
 
     // Set due date
     const billDueDate = dueDate ? new Date(dueDate) : (() => {
@@ -319,7 +145,7 @@ exports.createCustomBill = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Custom bill created successfully",
+      message: "Bill created successfully",
       data: populatedBill
     });
 
@@ -336,6 +162,22 @@ exports.getRoomBills = async (req, res) => {
   try {
     const { roomId } = req.params;
     const { status, page = 1, limit = 10 } = req.query;
+    
+    // Verify room ownership
+    const room = await Room.findById(roomId).populate("accommodationId");
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+
+    if (room.accommodationId.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view bills for this room"
+      });
+    }
     
     const query = { roomId };
     if (status) {
@@ -382,6 +224,7 @@ exports.getTenantBills = async (req, res) => {
     const bills = await Bill.find(query)
       .populate("roomId", "roomNumber name")
       .populate("landlordId", "name email phoneNumber")
+      .populate("accommodationId", "name")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -425,6 +268,17 @@ exports.getBillDetails = async (req, res) => {
       });
     }
 
+    // Check authorization - landlord or representative can view
+    const isLandlord = bill.landlordId._id.toString() === req.user.id;
+    const isRepresentative = bill.representativeId._id.toString() === req.user.id;
+    
+    if (!isLandlord && !isRepresentative) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view this bill"
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: bill
@@ -447,6 +301,14 @@ exports.sendBill = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Bill not found"
+      });
+    }
+
+    // Verify authorization
+    if (bill.landlordId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to send this bill"
       });
     }
 
@@ -530,6 +392,14 @@ exports.updateBill = async (req, res) => {
       });
     }
 
+    // Verify authorization
+    if (bill.landlordId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this bill"
+      });
+    }
+
     if (bill.status !== "draft") {
       return res.status(400).json({
         success: false,
@@ -570,6 +440,14 @@ exports.deleteBill = async (req, res) => {
       });
     }
 
+    // Verify authorization
+    if (bill.landlordId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this bill"
+      });
+    }
+
     if (bill.status !== "draft") {
       return res.status(400).json({
         success: false,
@@ -586,7 +464,7 @@ exports.deleteBill = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+        message: error.message
     });
   }
 };
