@@ -2,7 +2,10 @@
 const express = require("express");
 const router = express.Router();
 const billController = require("../controllers/billController");
-const { protect, restrictTo } = require("../controllers/authenticateController");
+const {
+  protect,
+  restrictTo,
+} = require("../controllers/authenticateController");
 
 // Protect all routes
 router.use(protect);

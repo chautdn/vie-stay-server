@@ -1,6 +1,7 @@
 const Payment = require("../models/Payment");
 const AgreementConfirmation = require("../models/AgreementConfirmation");
 const TenancyAgreement = require("../models/TenancyAgreement");
+const RoomOccupancy = require("../models/RoomOccupancy");
 const Room = require("../models/Room");
 const crypto = require("crypto");
 const qs = require("qs");
@@ -267,6 +268,16 @@ class PaymentService {
               paymentId: payment._id,
             }
           );
+          await this.createOccupancyRecord(payment.agreementConfirmationId);
+
+          await AgreementConfirmation.findByIdAndUpdate(
+            payment.agreementConfirmationId._id,
+            {
+              status: "payment_completed",
+              paymentCompletedAt: new Date(),
+              paymentId: payment._id,
+            }
+          );
 
           // ✅ THÊM: Chuyển tiền cọc vào ví chủ nhà (không gửi email)
           await this.transferDepositToLandlordWallet(payment);
@@ -324,6 +335,58 @@ class PaymentService {
         success: false,
         redirectUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/payment/failure?code=server_error`,
       };
+    }
+  }
+
+  async createOccupancyRecord(confirmation) {
+    try {
+      const roomId = confirmation.roomId._id;
+      const tenantId = confirmation.tenantId._id;
+
+      // Check if occupancy already exists
+      const existingOccupancy = await RoomOccupancy.findOne({
+        roomId,
+        tenantId,
+        status: "active",
+      });
+
+      if (existingOccupancy) {
+        console.log(
+          `ℹ️ Occupancy already exists for tenant ${tenantId} in room ${roomId}`
+        );
+        return existingOccupancy;
+      }
+
+      // Check how many tenants are already in the room
+      const currentTenantCount = await RoomOccupancy.countDocuments({
+        roomId,
+        status: "active",
+      });
+
+      // Create new occupancy record
+      const occupancy = new RoomOccupancy({
+        roomId,
+        tenantId,
+        isRepresentative: currentTenantCount === 0, // First tenant becomes representative
+        moveInDate: confirmation.agreementTerms.startDate || new Date(),
+        monthlyRent: confirmation.agreementTerms.monthlyRent || 0,
+        status: "active",
+      });
+
+      await occupancy.save();
+
+      console.log(
+        `✅ Created occupancy record for tenant ${tenantId} in room ${roomId}`,
+        {
+          occupancyId: occupancy._id,
+          isRepresentative: occupancy.isRepresentative,
+        }
+      );
+
+      return occupancy;
+    } catch (error) {
+      console.error("❌ Error creating occupancy record:", error);
+      // Don't throw error - just log it so payment process continues
     }
   }
 

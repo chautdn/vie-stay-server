@@ -1,3 +1,4 @@
+// src/routes/roomOccupancyRoute.js - Add fix endpoint
 const express = require("express");
 const router = express.Router();
 const roomOccupancyController = require("../controllers/roomOccupancyController");
@@ -11,6 +12,11 @@ router
   .route("/room/:roomId/tenants")
   .get(roomOccupancyController.getRoomTenants)
   .post(restrictTo("landlord", "admin"), roomOccupancyController.addTenantToRoom);
+
+// Fix endpoint to create occupancy records for existing tenants
+router
+  .route("/room/:roomId/fix-occupancy")
+  .post(restrictTo("landlord", "admin"), roomOccupancyController.createOccupancyForExistingTenants);
 
 router
   .route("/room/:roomId/tenants/:tenantId")
